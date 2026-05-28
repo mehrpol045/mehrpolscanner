@@ -56,12 +56,12 @@ Download from the [releases page](https://github.com/matinsenpai/senpaiscanner/r
 stable release:
 ```bash
 
-curl -fsSL https://github.com/M-logique/SenPaiScanner/raw/refs/heads/main/install.sh | bash
+curl -fsSL https://github.com/MatinSenPai/SenPaiScanner/raw/refs/heads/main/install.sh | bash
 ```
 
 pre-release:
 ```bash
-curl -fsSL https://github.com/M-logique/SenPaiScanner/raw/refs/heads/main/install.sh | bash -s -- --prerelease
+curl -fsSL https://github.com/MatinSenPai/SenPaiScanner/raw/refs/heads/main/install.sh | bash -s -- --prerelease
 ```
 
 

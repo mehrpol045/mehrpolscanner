@@ -3,11 +3,11 @@
 # Auto installer/updater for SenPaiScanner
 #
 # Usage:
-#   curl -fsSL https://github.com/M-logique/SenPaiScanner/raw/refs/heads/main/install.sh | bash
+#   curl -fsSL https://github.com/MatinSenPai/SenPaiScanner/raw/refs/heads/main/install.sh | bash
 #   
 #
 # Pre-release support:
-#   curl -fsSL https://github.com/M-logique/SenPaiScanner/raw/refs/heads/main/install.sh | bash -s -- --prerelease
+#   curl -fsSL https://github.com/MatinSenPai/SenPaiScanner/raw/refs/heads/main/install.sh | bash -s -- --prerelease
 #   or
 #   PRERELEASE=1 bash install.sh
 #   or
