@@ -199,14 +199,21 @@ type AppModel struct {
 	version   string
 }
 
-var menuItems = []string{
-	"  Quick Scan       scan random Cloudflare IPs",
-	"  Custom Scan      configure count, mode, CIDR, output…",
-	"  Test IPs         deep-test a list of IPs from file",
-	"  Discover Colos   find reachable Cloudflare PoPs",
-	"  About",
-	"  Quit",
+type menuEntry struct {
+	label string
+	desc  string
 }
+
+var menuEntries = []menuEntry{
+	{"Quick Scan", "scan random Cloudflare IPs"},
+	{"Custom Scan", "configure count, mode, CIDR, output…"},
+	{"Test IPs", "deep-test a list of IPs from file"},
+	{"Discover Colos", "find reachable Cloudflare PoPs"},
+	{"About", ""},
+	{"Quit", ""},
+}
+
+const menuLabelWidth = 16
 
 const (
 	menuQuickScan  = 0
@@ -379,7 +386,7 @@ func (m AppModel) handleHomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.menuIdx--
 		}
 	case "down", "j":
-		if m.menuIdx < len(menuItems)-1 {
+		if m.menuIdx < len(menuEntries)-1 {
 			m.menuIdx++
 		}
 	case "enter", " ":
@@ -813,32 +820,25 @@ func (m AppModel) viewHome() string {
 	sb.WriteString(art)
 	sb.WriteRune('\n')
 
-	// Version
-	sb.WriteString(styleDim.Render(fmt.Sprintf("  v%s\n\n", m.version)))
+	// Version — keep newlines outside styled output; lipgloss pads blank lines with spaces.
+	sb.WriteString(styleDim.Render(fmt.Sprintf("  v%s", m.version)))
+	sb.WriteString("\n\n")
 
 	// Menu
-	for i, item := range menuItems {
-		parts := strings.SplitN(item, "  ", 3)
-		var line string
-		if len(parts) == 3 {
-			label := strings.TrimSpace(parts[1])
-			desc := strings.TrimSpace(parts[2])
-			if i == m.menuIdx {
-				arrow := styleAccent.Render(" ▶ ")
-				line = arrow + styleSelected.Render(fmt.Sprintf(" %-20s", label)) + "  " + styleDim.Render(desc)
-			} else {
-				line = "   " + styleNormal.Render(fmt.Sprintf(" %-20s", label)) + "  " + styleDim.Render(desc)
-			}
-		} else {
-			label := strings.TrimSpace(item)
-			if i == m.menuIdx {
-				line = styleAccent.Render(" ▶ ") + styleSelected.Render(fmt.Sprintf(" %-20s", label))
-			} else {
-				line = "   " + styleNormal.Render(fmt.Sprintf(" %-20s", label))
-			}
+	for i, item := range menuEntries {
+		cursor := "  "
+		labelStyle := styleNormal
+		if i == m.menuIdx {
+			cursor = styleAccent.Render("▶ ")
+			labelStyle = styleSelected
 		}
-		newLine := fmt.Sprintf("%v\n", line)
-		sb.WriteString(newLine)
+
+		line := "  " + cursor + labelStyle.Render(fmt.Sprintf("%-*s", menuLabelWidth, item.label))
+		if item.desc != "" {
+			line += "  " + styleDim.Render(item.desc)
+		}
+		sb.WriteString(line)
+		sb.WriteRune('\n')
 	}
 
 	sb.WriteRune('\n')
@@ -1183,7 +1183,8 @@ func (m AppModel) viewAbout() string {
 	sb.WriteString(banner.Render(m.bannerFrame / 2))
 	sb.WriteRune('\n')
 	sb.WriteString(styleTitle.Render("  SenPai Scanner\n"))
-	sb.WriteString(styleDim.Render(fmt.Sprintf("  version %s\n\n", m.version)))
+	sb.WriteString(styleDim.Render(fmt.Sprintf("  version %s", m.version)))
+	sb.WriteString("\n\n")
 	sb.WriteString(styleNormal.Render("  A Cloudflare IP scanner built for high-latency, restricted networks.\n"))
 	sb.WriteString(styleNormal.Render("  Probes Cloudflare's edge nodes via TCP/TLS/HTTP, measures loss,\n"))
 	sb.WriteString(styleNormal.Render("  jitter, and identifies the colo (PoP) behind each IP.\n\n"))
