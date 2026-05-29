@@ -46,6 +46,13 @@ func BuildXrayConfig(cfg *VLESSConfig, socksPort int) ([]byte, error) {
 }
 
 func buildOutbound(cfg *VLESSConfig) map[string]interface{} {
+	if cfg.Protocol == "trojan" {
+		return buildTrojanOutbound(cfg)
+	}
+	return buildVLESSOutbound(cfg)
+}
+
+func buildVLESSOutbound(cfg *VLESSConfig) map[string]interface{} {
 	users := []map[string]interface{}{
 		{
 			"id":         cfg.UUID,
@@ -56,7 +63,7 @@ func buildOutbound(cfg *VLESSConfig) map[string]interface{} {
 		users[0]["flow"] = cfg.Flow
 	}
 
-	outbound := map[string]interface{}{
+	return map[string]interface{}{
 		"tag":      "proxy",
 		"protocol": "vless",
 		"settings": map[string]interface{}{
@@ -70,8 +77,23 @@ func buildOutbound(cfg *VLESSConfig) map[string]interface{} {
 		},
 		"streamSettings": buildStreamSettings(cfg),
 	}
+}
 
-	return outbound
+func buildTrojanOutbound(cfg *VLESSConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"tag":      "proxy",
+		"protocol": "trojan",
+		"settings": map[string]interface{}{
+			"servers": []map[string]interface{}{
+				{
+					"address":  cfg.Address,
+					"port":     cfg.Port,
+					"password": cfg.Password,
+				},
+			},
+		},
+		"streamSettings": buildStreamSettings(cfg),
+	}
 }
 
 func buildStreamSettings(cfg *VLESSConfig) map[string]interface{} {

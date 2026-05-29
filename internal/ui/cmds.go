@@ -264,6 +264,64 @@ func sendColosDone(scanID int64) {
 	}
 }
 
+// runConfigPhase1 runs Phase 1 of "Scan with Config": a fast connectivity scan
+// that finds healthy Cloudflare IPs (or validates IPs from a file), then signals
+// the UI to start Phase 2 (xray validation) with the best candidates.
+func runConfigPhase1(opts configPhase1Options) {
+	ctx, cancel := context.WithCancel(context.Background())
+	scanCancel = cancel
+	defer cancel()
+
+	engCfg := engine.Config{
+		Concurrency: opts.concurrency,
+		ProbeConfig: prober.Config{
+			Port:       443,
+			Mode:       prober.ModeHTTP,
+			Tries:      2,
+			Timeout:    opts.timeout,
+			SpeedBytes: 0, // Phase 1 is connectivity-only; no download test
+		},
+	}
+	eng := engine.New(engCfg)
+
+	callback := func(r *result.Result) {
+		if prog != nil {
+			prog.Send(ConfigPhase1ResultMsg{Result: r})
+		}
+	}
+
+	if opts.fromFile {
+		ips, err := loadIPs("ips.txt")
+		if err != nil {
+			if prog != nil {
+				prog.Send(ConfigPhase1ErrMsg{Err: "ips.txt not found — place it next to the binary"})
+			}
+			return
+		}
+		if len(ips) == 0 {
+			if prog != nil {
+				prog.Send(ConfigPhase1ErrMsg{Err: "ips.txt is empty — add one IP per line"})
+			}
+			return
+		}
+		eng.RunList(ctx, ips, callback)
+	} else {
+		src, err := ipsrc.New(true, false, nil)
+		if err != nil {
+			if prog != nil {
+				prog.Send(ConfigPhase1DoneMsg{})
+			}
+			return
+		}
+		ipStream := src.Stream(ctx, opts.count)
+		eng.Run(ctx, ipStream, callback)
+	}
+
+	if prog != nil {
+		prog.Send(ConfigPhase1DoneMsg{})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
