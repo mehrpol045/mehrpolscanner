@@ -48,10 +48,11 @@ type VLESSConfig struct {
 // the share URL into a VLESSConfig. Returns an error if the scheme is unknown.
 func ParseProxyURL(raw string) (*VLESSConfig, error) {
 	raw = strings.TrimSpace(raw)
+	lower := strings.ToLower(raw)
 	switch {
-	case strings.HasPrefix(raw, "vless://"):
+	case strings.HasPrefix(lower, "vless://"):
 		return ParseVLESS(raw)
-	case strings.HasPrefix(raw, "trojan://"):
+	case strings.HasPrefix(lower, "trojan://"):
 		return ParseTrojan(raw)
 	default:
 		return nil, fmt.Errorf("unsupported URL scheme — must start with vless:// or trojan://")
@@ -60,13 +61,13 @@ func ParseProxyURL(raw string) (*VLESSConfig, error) {
 
 // ParseVLESS parses a vless:// share URL into a VLESSConfig.
 func ParseVLESS(raw string) (*VLESSConfig, error) {
-	if !strings.HasPrefix(raw, "vless://") {
+	if !hasScheme(raw, "vless") {
 		return nil, fmt.Errorf("not a vless:// URL")
 	}
 
 	// vless://UUID@address:port?params#remark
 	// URL parse doesn't handle the UUID as userinfo well, so we do it manually
-	raw = strings.TrimPrefix(raw, "vless://")
+	raw = stripScheme(raw, "vless")
 
 	// Split remark
 	remark := ""
@@ -109,6 +110,9 @@ func ParseVLESS(raw string) (*VLESSConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid port %q", portStr)
 		}
+	}
+	if err := validatePort(port); err != nil {
+		return nil, err
 	}
 
 	cfg := &VLESSConfig{
@@ -235,6 +239,22 @@ func splitHostPort(hostPort string) (string, string, error) {
 	return hostPort[:lastColon], hostPort[lastColon+1:], nil
 }
 
+func hasScheme(raw, scheme string) bool {
+	prefix := scheme + "://"
+	return strings.HasPrefix(strings.ToLower(raw), prefix)
+}
+
+func stripScheme(raw, scheme string) string {
+	return raw[len(scheme)+3:]
+}
+
+func validatePort(port int) error {
+	if port <= 0 || port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535")
+	}
+	return nil
+}
+
 // recoverMissingQuerySep handles URLs where the '?' separator between port and
 // query params was silently dropped (common with certain terminal paste modes).
 // Input: portStr like "2053encryption=none&security=tls&sni=..."
@@ -274,11 +294,11 @@ func paramOr(params url.Values, key, fallback string) string {
 // ParseTrojan parses a trojan:// share URL.
 // Format: trojan://password@address:port?params#remark
 func ParseTrojan(raw string) (*VLESSConfig, error) {
-	if !strings.HasPrefix(raw, "trojan://") {
+	if !hasScheme(raw, "trojan") {
 		return nil, fmt.Errorf("not a trojan:// URL")
 	}
 
-	raw = strings.TrimPrefix(raw, "trojan://")
+	raw = stripScheme(raw, "trojan")
 
 	// Split remark
 	remark := ""
@@ -317,6 +337,9 @@ func ParseTrojan(raw string) (*VLESSConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid port %q", portStr)
 		}
+	}
+	if err := validatePort(port); err != nil {
+		return nil, err
 	}
 
 	cfg := &VLESSConfig{

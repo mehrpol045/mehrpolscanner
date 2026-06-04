@@ -87,11 +87,39 @@ func TestParseVLESS_Invalid(t *testing.T) {
 		"vmess://something",
 		"vless://no-at-sign",
 		"vless://uuid@host-no-port",
+		"vless://12345678-1234-1234-1234-123456789abc@example.com:0?encryption=none",
+		"vless://12345678-1234-1234-1234-123456789abc@example.com:65536?encryption=none",
 	}
 	for _, c := range cases {
 		_, err := ParseVLESS(c)
 		if err == nil {
 			t.Errorf("expected error for %q, got nil", c)
+		}
+	}
+}
+
+func TestParseProxyURLAcceptsCaseInsensitiveScheme(t *testing.T) {
+	raw := "VLESS://12345678-1234-1234-1234-123456789abc@example.com:443?encryption=none&security=tls&type=ws#test"
+
+	cfg, err := ParseProxyURL(raw)
+	if err != nil {
+		t.Fatalf("ParseProxyURL failed: %v", err)
+	}
+	if cfg.Protocol != "vless" {
+		t.Fatalf("Protocol = %q, want vless", cfg.Protocol)
+	}
+	if cfg.Port != 443 {
+		t.Fatalf("Port = %d, want 443", cfg.Port)
+	}
+}
+
+func TestParseTrojanRejectsInvalidPortRange(t *testing.T) {
+	for _, raw := range []string{
+		"trojan://password@example.com:0?security=tls",
+		"trojan://password@example.com:65536?security=tls",
+	} {
+		if _, err := ParseTrojan(raw); err == nil {
+			t.Fatalf("expected error for %q, got nil", raw)
 		}
 	}
 }
