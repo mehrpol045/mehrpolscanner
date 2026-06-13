@@ -13,7 +13,7 @@ func TestLookupIranISP(t *testing.T) {
 		// Known IP in range: 37.156.155.200 (within 37.156.128.0 - 37.156.143.255)
 		{
 			ip:       "37.156.130.1",
-			wantISP:  "Iran Telecommunication Company PJS",
+			wantISP:  "Iran Telecommunication Company Pjs",
 			wantFind: true,
 		},
 		// Known IP in range: 5.112.98.253 (within 5.112.0.0 - 5.127.255.255)
