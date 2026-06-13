@@ -81,6 +81,7 @@ const rawIRRanges = `
 37.156.48.0	37.156.63.255	Rightel Communication Service Company PJS
 37.156.112.0	37.156.127.255	Iran Telecommunication Company PJS
 37.156.128.0	37.156.143.255	Iran Telecommunication Company PJS
+37.156.144.0	37.156.159.255	Iran Telecommunication Company PJS
 37.191.64.0	37.191.95.255	Tose'h Fanavari Ertebabat Pasargad Arian Co. PJS
 37.202.128.0	37.202.255.255	Aria Shatel Company Ltd
 37.221.0.0	37.221.63.255	Farabord Dadeh Haye Iranian Co.
