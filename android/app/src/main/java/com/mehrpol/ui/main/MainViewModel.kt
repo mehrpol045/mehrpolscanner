@@ -18,6 +18,9 @@ import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -80,8 +83,15 @@ data class SniCheckUiState(
     val error: String? = null
 )
 
+data class ScanHistoryEntry(
+    val date: String,
+    val ipCount: Int,
+    val healthyCount: Int
+)
+
 data class ScanUiState(
     val isRunning: Boolean = false,
+    val hasCompletedScan: Boolean = false,
     val tested: Int = 0,
     val healthy: Int = 0,
     val failed: Int = 0,
@@ -89,6 +99,8 @@ data class ScanUiState(
     val isPhase2: Boolean = false,
     val totalPhase2: Int = 0,
     val results: List<IpResult> = emptyList(),
+    val latencySamples: List<Int> = emptyList(),
+    val history: List<ScanHistoryEntry> = emptyList(),
     val error: String? = null,
     val config: ScanConfig = ScanConfig(),
     val sniCheck: SniCheckUiState = SniCheckUiState()
@@ -117,13 +129,36 @@ class MainViewModel : ViewModel() {
 
         override fun onResult(ip: String, port: Long, latencyMs: Long, loss: Double, colo: String, isHealthy: Boolean, isPhase2: Boolean, phase2Type: String, phase2Speed: Double, phase2Status: Boolean) {
             val res = IpResult(ip, port.toInt(), latencyMs.toInt(), loss, colo, isHealthy, isPhase2, phase2Type, phase2Speed, phase2Status)
-            val newList = _uiState.value.results.toMutableList()
+            val current = _uiState.value
+            val newList = current.results.toMutableList()
             newList.add(0, res)
-            _uiState.value = _uiState.value.copy(results = newList)
+            val newSamples = if (res.latencyMs > 0) {
+                (current.latencySamples + res.latencyMs).takeLast(60)
+            } else {
+                current.latencySamples
+            }
+            _uiState.value = current.copy(results = newList, latencySamples = newSamples)
         }
 
         override fun onFinished() {
-            _uiState.value = _uiState.value.copy(isRunning = false)
+            val current = _uiState.value
+            val ipCount = current.results.map { it.ip }.distinct().size.takeIf { it > 0 } ?: current.tested
+            val healthyCount = countHealthyResults(current.results)
+            val newHistory = if (ipCount > 0 || current.tested > 0) {
+                val entry = ScanHistoryEntry(
+                    date = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date()),
+                    ipCount = ipCount,
+                    healthyCount = healthyCount
+                )
+                (listOf(entry) + current.history).take(50)
+            } else {
+                current.history
+            }
+            _uiState.value = current.copy(
+                isRunning = false,
+                hasCompletedScan = ipCount > 0 || current.tested > 0,
+                history = newHistory
+            )
         }
 
         override fun onError(err: String) {
@@ -149,12 +184,23 @@ class MainViewModel : ViewModel() {
                 inFlight = 0,
                 totalPhase2 = 0,
                 results = emptyList(),
+                latencySamples = emptyList(),
+                hasCompletedScan = false,
                 error = null
             )
             Mobile.startScan(jsonConfig, scanCallback)
         }
     }
     
+
+    private fun countHealthyResults(results: List<IpResult>): Int {
+        val phase2Results = results.filter { it.isPhase2 }
+        return if (phase2Results.isNotEmpty()) {
+            phase2Results.count { it.phase2Status }
+        } else {
+            results.count { it.isHealthy }
+        }
+    }
 
     fun runSniCheck(host: String, sni: String, portText: String) {
         val cleanHost = host.trim()

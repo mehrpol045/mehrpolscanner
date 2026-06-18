@@ -7,10 +7,12 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,8 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Settings
@@ -34,7 +36,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
@@ -42,6 +48,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -49,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 import com.mehrpol.BuildConfig
 import com.mehrpol.R
 import com.mehrpol.theme.MehrpolCyan
@@ -132,8 +140,8 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Security, contentDescription = "SNI Check") },
-                    label = { Text("SNI") },
+                    icon = { Icon(Icons.Default.History, contentDescription = "History") },
+                    label = { Text("History") },
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
                     colors = NavigationBarItemDefaults.colors(
@@ -145,10 +153,23 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings") },
+                    icon = { Icon(Icons.Default.Security, contentDescription = "SNI Check") },
+                    label = { Text("SNI") },
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.background,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray
+                    )
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                    label = { Text("Settings") },
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.background,
                         selectedTextColor = MehrpolCyan,
@@ -179,7 +200,8 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
             when (selectedTab) {
                 0 -> HomeScreen(uiState, context)
-                1 -> SniCheckScreen(
+                1 -> HistoryScreen(uiState.history)
+                2 -> SniCheckScreen(
                     state = uiState.sniCheck,
                     onRunCheck = viewModel::runSniCheck
                 )
@@ -193,8 +215,46 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
 
 @Composable
 fun HomeScreen(uiState: ScanUiState, context: Context) {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        // Stats Cards
+    val healthyResults = remember(uiState.results) { healthyExportResults(uiState.results) }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var selectedCount by remember { mutableStateOf(ExportCountOption.THREE) }
+    var pendingDownload by remember { mutableStateOf<GeneratedExport?>(null) }
+    val documentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        val export = pendingDownload
+        if (uri != null && export != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { stream ->
+                    stream.write(export.content.toByteArray(Charsets.UTF_8))
+                }
+                Toast.makeText(context, "Downloaded ${export.format.label}", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Download failed: ${e.message ?: e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+            }
+        }
+        pendingDownload = null
+    }
+
+    if (showExportDialog) {
+        ExportDialog(
+            results = healthyResults,
+            config = uiState.config,
+            selectedCount = selectedCount,
+            onSelectedCountChange = { selectedCount = it },
+            onDismiss = { showExportDialog = false },
+            onCopy = { export ->
+                copyText(context, export.format.label, export.content)
+                Toast.makeText(context, "Copied ${export.format.label}", Toast.LENGTH_SHORT).show()
+            },
+            onDownload = { export ->
+                pendingDownload = export
+                documentLauncher.launch(export.fileName)
+            }
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StatCard("Tested", uiState.tested.toString(), Modifier.weight(1f))
             StatCard("In-Flight", uiState.inFlight.toString(), Modifier.weight(1f))
@@ -206,71 +266,69 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
         }
 
         Spacer(modifier = Modifier.height(8.dp))
-
-        // Discovered IPs Header
-        Text("Discovered IPs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        
+        LatencySparkline(samples = uiState.latencySamples, isRunning = uiState.isRunning)
         Spacer(modifier = Modifier.height(8.dp))
-        
-        // Copy Buttons Row
+
+        if (uiState.hasCompletedScan || healthyResults.isNotEmpty()) {
+            HealthyExportControls(
+                selectedCount = selectedCount,
+                enabled = healthyResults.isNotEmpty(),
+                buttonText = if (uiState.hasCompletedScan) "Export Healthy IPs" else "Export",
+                onSelectedCountChange = { selectedCount = it },
+                onExport = { showExportDialog = true }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Text("Discovered IPs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Phase 1 Copy Button
             OutlinedButton(
                 onClick = {
                     val phase1Ips = uiState.results.filter { !it.isPhase2 && it.isHealthy }.map { it.ip }.distinct().joinToString("\n")
                     if (phase1Ips.isNotEmpty()) {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("mehrpol IPs", phase1Ips))
+                        copyText(context, "mehrpol IPs", phase1Ips)
                         val count = uiState.results.count { !it.isPhase2 && it.isHealthy }
                         Toast.makeText(context, "Copied $count Phase 1 IPs", Toast.LENGTH_SHORT).show()
                     }
                 },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MehrpolCyan
-                ),
+                enabled = uiState.results.any { !it.isPhase2 && it.isHealthy },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MehrpolCyan),
                 border = BorderStroke(1.dp, MehrpolCyan)
             ) {
-                Text(
-                    text = "Copy",
-                    fontSize = 12.sp,
-                    color = MehrpolCyan
-                )
-                Spacer(modifier = Modifier.width(4.dp))
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Text("Phase 1", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MehrpolCyan)
             }
-            
-            // Phase 2 Copy Button (only visible when Phase 2 results exist)
+
             if (uiState.results.any { it.isPhase2 }) {
                 OutlinedButton(
                     onClick = {
                         val phase2Ips = uiState.results.filter { it.isPhase2 && it.phase2Status }.map { it.ip }.distinct().joinToString("\n")
                         if (phase2Ips.isNotEmpty()) {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("mehrpol Phase 2 IPs", phase2Ips))
+                            copyText(context, "mehrpol Phase 2 IPs", phase2Ips)
                             val count = uiState.results.count { it.isPhase2 && it.phase2Status }
                             Toast.makeText(context, "Copied $count Phase 2 IPs", Toast.LENGTH_SHORT).show()
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MehrpolPrimary
-                    ),
+                    enabled = uiState.results.any { it.isPhase2 && it.phase2Status },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MehrpolPrimary),
                     border = BorderStroke(1.dp, MehrpolPrimary)
                 ) {
-                    Text(
-                        text = "Copy",
-                        fontSize = 12.sp,
-                        color = MehrpolPrimary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text("Phase 2", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MehrpolPrimary)
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (uiState.isPhase2) {
             val progress = if (uiState.totalPhase2 > 0) uiState.tested.toFloat() / uiState.totalPhase2 else 0f
@@ -310,73 +368,182 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 80.dp) // space for FAB
+            contentPadding = PaddingValues(bottom = 80.dp)
         ) {
             items(uiState.results) { res ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface)
-                ) {
-                    if (res.isPhase2) {
-                        Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                    Text("${res.ip}:${res.port}", fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy IP",
-                                        tint = MehrpolCyan,
-                                        modifier = Modifier
-                                            .size(16.dp)
-                                            .clickable {
-                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                clipboard.setPrimaryClip(ClipData.newPlainText("IP", res.ip))
-                                                Toast.makeText(context, "IP copied: ${res.ip}", Toast.LENGTH_SHORT).show()
-                                            }
-                                    )
-                                }
-                                Icon(
-                                    imageVector = if (res.phase2Status) Icons.Default.Check else Icons.Default.Close,
-                                    contentDescription = if (res.phase2Status) "Passed" else "Failed",
-                                    tint = if (res.phase2Status) MehrpolSuccess else MehrpolError,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Type: ${res.phase2Type}", fontSize = 11.sp, color = Color.Gray)
-                                val speedStr = if (res.phase2Speed > 1024*1024) String.format("%.2f MB/s", res.phase2Speed / (1024*1024)) else String.format("%.0f KB/s", res.phase2Speed / 1024)
-                                Text("Speed: ${if (res.phase2Speed > 0) speedStr else "-"}", fontSize = 11.sp, color = Color.Gray)
-                                Text("Latency: ${if (res.latencyMs > 0) "${res.latencyMs}ms" else "-"}", fontSize = 11.sp, color = Color.Gray)
-                            }
+                IpResultCard(result = res, onCopyIp = {
+                    copyText(context, "IP", res.ip)
+                    Toast.makeText(context, "IP copied: ${res.ip}", Toast.LENGTH_SHORT).show()
+                })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HealthyExportControls(
+    selectedCount: ExportCountOption,
+    enabled: Boolean,
+    buttonText: String,
+    onSelectedCountChange: (ExportCountOption) -> Unit,
+    onExport: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Healthy IPs in config", fontSize = 12.sp, color = Color.Gray)
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ExportCountOption.entries.forEach { option ->
+                FilterChip(
+                    selected = selectedCount == option,
+                    onClick = { onSelectedCountChange(option) },
+                    label = { Text(option.label, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MehrpolCyan,
+                        selectedLabelColor = MaterialTheme.colorScheme.background
+                    )
+                )
+            }
+        }
+        Button(
+            onClick = onExport,
+            enabled = enabled,
+            colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(buttonText, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun LatencySparkline(samples: List<Int>, isRunning: Boolean) {
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Latency", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (samples.isNotEmpty()) "${samples.last()} ms" else if (isRunning) "Waiting" else "No samples",
+                    color = if (samples.isNotEmpty()) MehrpolCyan else Color.Gray,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Canvas(modifier = Modifier.fillMaxWidth().height(64.dp)) {
+                val trackColor = Color.Gray.copy(alpha = 0.25f)
+                drawLine(trackColor, Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1.dp.toPx())
+                if (samples.size < 2) return@Canvas
+                val min = samples.minOrNull() ?: 0
+                val max = samples.maxOrNull() ?: min
+                val range = (max - min).takeIf { it > 0 } ?: 1
+                val stepX = size.width / (samples.size - 1)
+                val path = Path()
+                samples.forEachIndexed { index, sample ->
+                    val x = stepX * index
+                    val normalized = (sample - min).toFloat() / range.toFloat()
+                    val y = size.height - (normalized * size.height)
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(
+                    path = path,
+                    color = MehrpolCyan,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IpResultCard(result: IpResult, onCopyIp: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface)
+    ) {
+        if (result.isPhase2) {
+            Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Text(
+                            "${result.ip}:${result.port}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        IconButton(onClick = onCopyIp, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy IP", tint = MehrpolCyan, modifier = Modifier.size(18.dp))
                         }
+                    }
+                    Icon(
+                        imageVector = if (result.phase2Status) Icons.Default.Check else Icons.Default.Close,
+                        contentDescription = if (result.phase2Status) "Passed" else "Failed",
+                        tint = if (result.phase2Status) MehrpolSuccess else MehrpolError,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Type: ${result.phase2Type}", fontSize = 11.sp, color = Color.Gray)
+                    val speedStr = if (result.phase2Speed > 1024 * 1024) {
+                        String.format(Locale.US, "%.2f MB/s", result.phase2Speed / (1024 * 1024))
                     } else {
-                        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column {
-                                    Text(res.ip, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                    Text("Port: ${res.port} | Colo: ${res.colo}", fontSize = 12.sp, color = Color.Gray)
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "Copy IP",
-                                    tint = MehrpolCyan,
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clickable {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(ClipData.newPlainText("IP", res.ip))
-                                            Toast.makeText(context, "IP copied: ${res.ip}", Toast.LENGTH_SHORT).show()
-                                        }
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("${res.latencyMs} ms", color = if (res.isHealthy) MehrpolSuccess else MehrpolError, fontWeight = FontWeight.Bold)
-                                Text("Loss: ${String.format("%.2f", res.loss)}%", fontSize = 12.sp, color = Color.Gray)
-                            }
+                        String.format(Locale.US, "%.0f KB/s", result.phase2Speed / 1024)
+                    }
+                    Text("Speed: ${if (result.phase2Speed > 0) speedStr else "-"}", fontSize = 11.sp, color = Color.Gray)
+                    Text("Latency: ${if (result.latencyMs > 0) "${result.latencyMs}ms" else "-"}", fontSize = 11.sp, color = Color.Gray)
+                }
+            }
+        } else {
+            Row(modifier = Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(result.ip, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Port: ${result.port} | Colo: ${result.colo}", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    IconButton(onClick = onCopyIp, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy IP", tint = MehrpolCyan, modifier = Modifier.size(18.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("${result.latencyMs} ms", color = if (result.isHealthy) MehrpolSuccess else MehrpolError, fontWeight = FontWeight.Bold)
+                    Text("Loss: ${String.format(Locale.US, "%.2f", result.loss)}%", fontSize = 12.sp, color = Color.Gray)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HistoryScreen(history: List<ScanHistoryEntry>) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Text("History", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
+        }
+        if (history.isEmpty()) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+                    Text("No scans yet", modifier = Modifier.padding(16.dp), color = Color.Gray)
+                }
+            }
+        } else {
+            items(history) { entry ->
+                Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(entry.date, fontWeight = FontWeight.Bold)
+                            Text("${entry.ipCount} IPs tested", color = Color.Gray, fontSize = 12.sp)
                         }
+                        Text("${entry.healthyCount} healthy", color = MehrpolSuccess, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -384,6 +551,229 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
     }
 }
 
+enum class ExportFormat(val label: String, val extension: String) {
+    V2RAY("V2Ray links", "txt"),
+    XRAY("Xray JSON", "json"),
+    CLASH("Clash YAML", "yaml"),
+    CSV("CSV", "csv")
+}
+
+enum class ExportCountOption(val label: String, val limit: Int?) {
+    ONE("1", 1),
+    THREE("3", 3),
+    FIVE("5", 5),
+    TEN("10", 10),
+    ALL("All", null)
+}
+
+data class GeneratedExport(
+    val format: ExportFormat,
+    val fileName: String,
+    val content: String
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExportDialog(
+    results: List<IpResult>,
+    config: ScanConfig,
+    selectedCount: ExportCountOption,
+    onSelectedCountChange: (ExportCountOption) -> Unit,
+    onDismiss: () -> Unit,
+    onCopy: (GeneratedExport) -> Unit,
+    onDownload: (GeneratedExport) -> Unit
+) {
+    val selectedResults = remember(results, selectedCount) { selectExportResults(results, selectedCount) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Export Healthy IPs") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Include", color = Color.Gray, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    ExportCountOption.entries.forEach { option ->
+                        FilterChip(
+                            selected = selectedCount == option,
+                            onClick = { onSelectedCountChange(option) },
+                            label = { Text(option.label, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MehrpolCyan,
+                                selectedLabelColor = MaterialTheme.colorScheme.background
+                            )
+                        )
+                    }
+                }
+                Text("${selectedResults.size} healthy IPs selected", color = MehrpolCyan, fontWeight = FontWeight.Medium)
+                ExportFormat.entries.forEach { format ->
+                    val export = remember(selectedResults, config, format) { buildExport(format, selectedResults, config) }
+                    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(format.label, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { onCopy(export) }, enabled = selectedResults.isNotEmpty()) {
+                                Text("Copy", color = MehrpolCyan)
+                            }
+                            TextButton(onClick = { onDownload(export) }, enabled = selectedResults.isNotEmpty()) {
+                                Text("Download", color = MehrpolCyan)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+        containerColor = MehrpolDarkSurface
+    )
+}
+
+private fun copyText(context: Context, label: String, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+}
+
+private fun healthyExportResults(results: List<IpResult>): List<IpResult> {
+    val phase2 = results.filter { it.isPhase2 }
+    val healthy = if (phase2.isNotEmpty()) {
+        phase2.filter { it.phase2Status }
+    } else {
+        results.filter { it.isHealthy }
+    }
+    return healthy.distinctBy { "${it.ip}:${it.port}" }.sortedBy { if (it.latencyMs > 0) it.latencyMs else Int.MAX_VALUE }
+}
+
+private fun selectExportResults(results: List<IpResult>, count: ExportCountOption): List<IpResult> {
+    return count.limit?.let { results.take(it) } ?: results
+}
+
+private fun buildExport(format: ExportFormat, results: List<IpResult>, config: ScanConfig): GeneratedExport {
+    val content = when (format) {
+        ExportFormat.V2RAY -> buildV2RayLinks(results, config)
+        ExportFormat.XRAY -> buildXrayJson(results, config)
+        ExportFormat.CLASH -> buildClashYaml(results, config)
+        ExportFormat.CSV -> buildCsv(results)
+    }
+    return GeneratedExport(format, "mehrpol-healthy-ips.${format.extension}", content)
+}
+
+private fun buildV2RayLinks(results: List<IpResult>, config: ScanConfig): String {
+    return results.mapIndexed { index, result ->
+        val template = config.configUrl.trim()
+        if (template.contains("://")) {
+            replaceProxyEndpoint(template, result.ip, result.port, "mehrpol-${index + 1}-${result.ip}")
+        } else {
+            "vless://${result.ip}:${result.port}?encryption=none&security=tls&type=tcp#mehrpol-${index + 1}-${result.ip}"
+        }
+    }.joinToString("\n")
+}
+
+private fun buildXrayJson(results: List<IpResult>, config: ScanConfig): String {
+    if (results.isEmpty()) {
+        return """{
+  "remarks": "Generated by mehrpol",
+  "outbounds": []
+}"""
+    }
+    val vnext = results.joinToString(",\n") { result ->
+        """        {
+          "address": "${result.ip}",
+          "port": ${result.port},
+          "users": [
+            {
+              "id": "00000000-0000-0000-0000-000000000000",
+              "encryption": "none"
+            }
+          ]
+        }"""
+    }
+    val remarks = jsonEscape(config.configUrl.takeIf { it.isNotBlank() }?.let { "Template: $it" } ?: "Generated by mehrpol")
+    return """{
+  "remarks": "$remarks",
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+$vnext
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls"
+      }
+    }
+  ]
+}"""
+}
+
+private fun buildClashYaml(results: List<IpResult>, config: ScanConfig): String {
+    if (results.isEmpty()) return "proxies: []\nproxy-groups: []\nrules: []\n"
+    val proxies = results.mapIndexed { index, result ->
+        """  - name: mehrpol-${index + 1}-${result.ip}
+    type: vless
+    server: ${result.ip}
+    port: ${result.port}
+    uuid: 00000000-0000-0000-0000-000000000000
+    network: tcp
+    tls: true
+    udp: true"""
+    }.joinToString("\n")
+    val names = results.mapIndexed { index, result -> "mehrpol-${index + 1}-${result.ip}" }
+        .joinToString("\n") { "      - $it" }
+    val note = config.configUrl.takeIf { it.isNotBlank() }?.let { "# Template: $it\n" } ?: ""
+    return """${note}proxies:
+$proxies
+proxy-groups:
+  - name: mehrpol-auto
+    type: select
+    proxies:
+$names
+rules:
+  - MATCH,mehrpol-auto
+"""
+}
+
+private fun buildCsv(results: List<IpResult>): String {
+    val rows = results.joinToString("\n") { result ->
+        listOf(result.ip, result.port.toString(), result.latencyMs.toString(), String.format(Locale.US, "%.2f", result.loss), result.colo)
+            .joinToString(",") { csvEscape(it) }
+    }
+    return "ip,port,latency_ms,loss_percent,colo\n$rows"
+}
+
+private fun replaceProxyEndpoint(template: String, ip: String, port: Int, fragment: String): String {
+    val schemeEnd = template.indexOf("://")
+    if (schemeEnd < 0) return template
+    val authorityStart = schemeEnd + 3
+    val authorityEnd = listOf('/', '?', '#')
+        .map { template.indexOf(it, authorityStart) }
+        .filter { it >= 0 }
+        .minOrNull() ?: template.length
+    val authority = template.substring(authorityStart, authorityEnd)
+    val userInfoEnd = authority.lastIndexOf('@')
+    val userInfo = if (userInfoEnd >= 0) authority.substring(0, userInfoEnd + 1) else ""
+    val withoutFragment = template.substring(0, authorityStart) + userInfo + ip + ":$port" + template.substring(authorityEnd).substringBefore('#')
+    return "$withoutFragment#$fragment"
+}
+
+private fun jsonEscape(value: String): String {
+    return value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+}
+
+private fun csvEscape(value: String): String {
+    return if (value.any { it == ',' || it == '"' || it == '\n' }) {
+        "\"${value.replace("\"", "\"\"")}\""
+    } else {
+        value
+    }
+}
 
 @Composable
 fun SniCheckScreen(state: SniCheckUiState, onRunCheck: (String, String, String) -> Unit) {
