@@ -27,7 +27,7 @@ mehrpolscanner is available as a desktop terminal UI, Android app, and Termux-fr
 |---|---|
 | 🔍 Scanning | Cloudflare IPv4 scanning, random source, custom `ips.txt` source, port selection, timeout control, result sorting, and IP count selector for config generation |
 | ⚡ Parallel scanning | Concurrent workers with presets for restricted, balanced, and fast networks |
-| 🌐 SNI check | Dedicated TLS SNI check for host/IP, SNI value, and port |
+| 🌐 SNI check | Dedicated TLS SNI check for host/IP, SNI value, and port; when only SNI + port are entered, it automatically scans Cloudflare IPs and returns the best latency-sorted results |
 | 🤖 Auto-SNI | Optional SNI rotation and auto-detection using `MEHRPOLSCANNER_SNIS` and `MEHRPOLSCANNER_AUTO_SNI` |
 | 🔐 TLS cert info | TLS handshake status plus certificate CN, issuer, expiry, and DNS names when available |
 | 🧪 VLESS/Trojan test | End-to-end proxy validation with embedded Xray; VMess links are also parsed/exported where supported |
@@ -40,7 +40,7 @@ mehrpolscanner is available as a desktop terminal UI, Android app, and Termux-fr
 | 📣 Telegram bot | Sends scan summaries to Telegram when bot credentials are configured |
 | ⏱️ Scheduled scan | Runs the saved scan repeatedly with `MEHRPOLSCANNER_AUTOSCAN_EVERY` |
 | 📦 Export dialog | Exports V2Ray links, Xray JSON, Clash YAML, CSV, and working endpoint lists with copy and download actions |
-| 📱 Android | Native Android UI with scan settings, result cards, per-IP copy button, SNI check, and Xray validation |
+| 📱 Android | Native Android UI with an improved HOME screen, floating scan button, scan settings, result cards, per-IP copy button, SNI check, and Xray validation |
 
 ### Screenshots
 
@@ -205,7 +205,7 @@ mehrpolscanner به شکل رابط ترمینالی، اپ اندروید و ب
 |---|---|
 | 🔍 اسکن | اسکن IPv4های Cloudflare، منبع تصادفی، ورودی `ips.txt`، انتخاب پورت، timeout، مرتب‌سازی نتایج و انتخاب تعداد IP برای ساخت config |
 | ⚡ اسکن موازی | workerهای همزمان با preset مناسب شبکه محدود، متعادل و سریع |
-| 🌐 بررسی SNI | تست TLS SNI برای host/IP، مقدار SNI و پورت |
+| 🌐 بررسی SNI | تست TLS SNI برای host/IP، مقدار SNI و پورت؛ اگر فقط SNI و پورت وارد شود، IPهای Cloudflare را خودکار اسکن می‌کند و بهترین نتایج را بر اساس latency برمی‌گرداند |
 | 🤖 Auto-SNI | چرخش SNI و تشخیص خودکار با `MEHRPOLSCANNER_SNIS` و `MEHRPOLSCANNER_AUTO_SNI` |
 | 🔐 اطلاعات TLS cert | وضعیت TLS handshake، CN، issuer، expiry و DNS nameهای گواهی در صورت وجود |
 | 🧪 تست VLESS/Trojan | اعتبارسنجی end-to-end با Xray داخلی؛ لینک‌های VMess هم در مسیرهای parser/export پشتیبانی می‌شوند |
@@ -218,7 +218,7 @@ mehrpolscanner به شکل رابط ترمینالی، اپ اندروید و ب
 | 📣 ربات تلگرام | ارسال خلاصه اسکن به تلگرام در صورت تنظیم اطلاعات ربات |
 | ⏱️ اسکن زمان‌بندی‌شده | اجرای تکراری آخرین اسکن با `MEHRPOLSCANNER_AUTOSCAN_EVERY` |
 | 📦 دیالوگ خروجی | export لینک‌های V2Ray، JSON برای Xray، YAML برای Clash، CSV و لیست endpointها با copy و download |
-| 📱 اندروید | رابط native اندروید با تنظیمات اسکن، کارت نتایج، دکمه کپی برای هر IP، SNI Check و اعتبارسنجی Xray |
+| 📱 اندروید | رابط native اندروید با HOME screen بهبودیافته، دکمه شناور اسکن، تنظیمات اسکن، کارت نتایج، دکمه کپی برای هر IP، SNI Check و اعتبارسنجی Xray |
 
 ### اسکرین‌شات‌ها
 
