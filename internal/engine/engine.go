@@ -57,57 +57,56 @@ func (e *Engine) Stats() *Stats {
 }
 
 // Run consumes IPs from src, probes each one, and forwards results to fn.
-// Run consumes IPs from src, probes each one, and forwards results to fn.
-// It blocks until src is exhausted or ctx is cancelled.
+// It uses a fixed worker pool to avoid per-IP goroutine churn during large scans.
 func (e *Engine) Run(ctx context.Context, src <-chan net.IP, fn ResultFunc) {
-	sem := make(chan struct{}, e.cfg.Concurrency)
+	workers := e.cfg.Concurrency
+	jobs := make(chan net.IP, workers*2)
 	var wg sync.WaitGroup
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ip := range jobs {
+				if ctx.Err() != nil {
+					continue
+				}
+				e.stats.InFlight.Add(1)
+				r := prober.Probe(ctx, ip, e.cfg.ProbeConfig)
+				e.stats.InFlight.Add(-1)
+				e.stats.Tested.Add(1)
+				if r.IsHealthy() {
+					e.stats.Healthy.Add(1)
+				} else {
+					e.stats.Failed.Add(1)
+				}
+				fn(r)
+			}
+		}()
+	}
+
+	defer func() {
+		close(jobs)
+		wg.Wait()
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
-			wg.Wait()
 			return
-		case sem <- struct{}{}:
-			select {
-			case <-ctx.Done():
-				<-sem
-				wg.Wait()
+		case ip, ok := <-src:
+			if !ok {
 				return
-			case ip, ok := <-src:
-				if !ok {
-					<-sem
-					wg.Wait()
+			}
+			if e.limiter != nil {
+				if err := e.limiter.Wait(ctx); err != nil {
 					return
 				}
-
-				if e.limiter != nil {
-					if err := e.limiter.Wait(ctx); err != nil {
-						<-sem
-						wg.Wait()
-						return
-					}
-				}
-
-				e.stats.InFlight.Add(1)
-				wg.Add(1)
-
-				go func(ip net.IP) {
-					defer func() {
-						<-sem
-						e.stats.InFlight.Add(-1)
-						wg.Done()
-					}()
-
-					r := prober.Probe(ctx, ip, e.cfg.ProbeConfig)
-					e.stats.Tested.Add(1)
-					if r.IsHealthy() {
-						e.stats.Healthy.Add(1)
-					} else {
-						e.stats.Failed.Add(1)
-					}
-					fn(r)
-				}(ip)
+			}
+			select {
+			case jobs <- ip:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}

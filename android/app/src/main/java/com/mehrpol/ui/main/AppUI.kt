@@ -34,6 +34,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AutoGraph
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.QrCode
@@ -149,7 +153,10 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+            ) {
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
                     label = { Text("Home") },
@@ -163,9 +170,10 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                         unselectedTextColor = Color.Gray
                     )
                 )
+
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.History, contentDescription = "History") },
-                    label = { Text("History") },
+                    icon = { Icon(Icons.Default.Bolt, contentDescription = "Warp") },
+                    label = { Text("Warp", fontSize = 10.sp, maxLines = 1) },
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
                     colors = NavigationBarItemDefaults.colors(
@@ -177,8 +185,8 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Security, contentDescription = "SNI Check") },
-                    label = { Text("SNI") },
+                    icon = { Icon(Icons.Default.Tune, contentDescription = "Proxy Checker") },
+                    label = { Text("Proxy", fontSize = 10.sp, maxLines = 1) },
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
                     colors = NavigationBarItemDefaults.colors(
@@ -190,8 +198,8 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
-                    label = { Text("Favorites") },
+                    icon = { Icon(Icons.Default.Subscriptions, contentDescription = "Subscriptions") },
+                    label = { Text("Sub", fontSize = 10.sp, maxLines = 1) },
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
                     colors = NavigationBarItemDefaults.colors(
@@ -203,8 +211,8 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.AutoGraph, contentDescription = "Monitor") },
-                    label = { Text("Monitor") },
+                    icon = { Icon(Icons.Default.History, contentDescription = "History") },
+                    label = { Text("History") },
                     selected = selectedTab == 4,
                     onClick = { selectedTab = 4 },
                     colors = NavigationBarItemDefaults.colors(
@@ -216,8 +224,8 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Radar, contentDescription = "Diagnostics") },
-                    label = { Text("Diagnostics", fontSize = 10.sp, maxLines = 1) },
+                    icon = { Icon(Icons.Default.Security, contentDescription = "SNI Check") },
+                    label = { Text("SNI") },
                     selected = selectedTab == 5,
                     onClick = { selectedTab = 5 },
                     colors = NavigationBarItemDefaults.colors(
@@ -229,8 +237,8 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Language, contentDescription = "Domains") },
-                    label = { Text("Domains", fontSize = 10.sp, maxLines = 1) },
+                    icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
+                    label = { Text("Favorites") },
                     selected = selectedTab == 6,
                     onClick = { selectedTab = 6 },
                     colors = NavigationBarItemDefaults.colors(
@@ -242,8 +250,8 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Dns, contentDescription = "DNS") },
-                    label = { Text("DNS", fontSize = 10.sp, maxLines = 1) },
+                    icon = { Icon(Icons.Default.AutoGraph, contentDescription = "Monitor") },
+                    label = { Text("Monitor") },
                     selected = selectedTab == 7,
                     onClick = { selectedTab = 7 },
                     colors = NavigationBarItemDefaults.colors(
@@ -255,8 +263,8 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Search, contentDescription = "DNS Hunter") },
-                    label = { Text("Hunter", fontSize = 10.sp, maxLines = 1) },
+                    icon = { Icon(Icons.Default.Radar, contentDescription = "Diagnostics") },
+                    label = { Text("Diagnostics", fontSize = 10.sp, maxLines = 1) },
                     selected = selectedTab == 8,
                     onClick = { selectedTab = 8 },
                     colors = NavigationBarItemDefaults.colors(
@@ -268,10 +276,49 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings", fontSize = 10.sp, maxLines = 1) },
+                    icon = { Icon(Icons.Default.Language, contentDescription = "Domains") },
+                    label = { Text("Domains", fontSize = 10.sp, maxLines = 1) },
                     selected = selectedTab == 9,
                     onClick = { selectedTab = 9 },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.background,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray
+                    )
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Dns, contentDescription = "DNS") },
+                    label = { Text("DNS", fontSize = 10.sp, maxLines = 1) },
+                    selected = selectedTab == 10,
+                    onClick = { selectedTab = 10 },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.background,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray
+                    )
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Search, contentDescription = "DNS Hunter") },
+                    label = { Text("Hunter", fontSize = 10.sp, maxLines = 1) },
+                    selected = selectedTab == 11,
+                    onClick = { selectedTab = 11 },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.background,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray
+                    )
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                    label = { Text("Settings", fontSize = 10.sp, maxLines = 1) },
+                    selected = selectedTab == 12,
+                    onClick = { selectedTab = 12 },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.background,
                         selectedTextColor = MehrpolCyan,
@@ -303,10 +350,26 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                 0 -> HomeScreen(
                     uiState = uiState,
                     context = context,
-                    onToggleFavorite = viewModel::toggleFavorite
+                    onToggleFavorite = viewModel::toggleFavorite,
+                    onRunSpeedTest = viewModel::runSpeedTest
                 )
-                1 -> HistoryScreen(uiState.history)
-                2 -> SniCheckScreen(
+                1 -> WarpScannerScreen(
+                    state = uiState.warpScanner,
+                    onRun = viewModel::runWarpScan,
+                    context = context
+                )
+                2 -> ProxyCheckerScreen(
+                    state = uiState.proxyChecker,
+                    onRun = viewModel::runProxyCheck,
+                    context = context
+                )
+                3 -> SubscriptionParserScreen(
+                    state = uiState.subscriptionParser,
+                    onRun = viewModel::parseSubscription,
+                    context = context
+                )
+                4 -> HistoryScreen(uiState.history)
+                5 -> SniCheckScreen(
                     state = uiState.sniCheck,
                     spoofState = uiState.sniSpoof,
                     config = uiState.config,
@@ -314,13 +377,13 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     onRunSpoofCheck = viewModel::runSniSpoofCheck,
                     onConfigChanged = viewModel::updateConfig
                 )
-                3 -> FavoritesScreen(
+                6 -> FavoritesScreen(
                     favorites = uiState.favorites,
                     autoReplacedConfig = uiState.autoReplacedConfig,
                     onRemoveFavorite = viewModel::removeFavorite,
                     context = context
                 )
-                4 -> MonitorScreen(
+                7 -> MonitorScreen(
                     state = uiState.monitor,
                     favorites = uiState.favorites,
                     onToggleSchedule = viewModel::startOrStopMonitor,
@@ -329,35 +392,39 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     onClearNotification = viewModel::clearMonitorNotification,
                     context = context
                 )
-                5 -> DiagnosticsScreen(
+                8 -> DiagnosticsScreen(
                     state = uiState.diagnostics,
                     onStart = viewModel::runDiagnostics
                 )
-                6 -> DomainsScreen(
+                9 -> DomainsScreen(
                     state = uiState.domains,
                     onAddDomain = viewModel::addCustomDomain,
                     onCheckAll = viewModel::checkAllDomains,
                     onCheckDomain = viewModel::checkDomain
                 )
-                7 -> DnsScreen(
+                10 -> DnsScreen(
                     state = uiState.dns,
                     onTestAll = viewModel::testAllDnsProviders
                 )
-                8 -> DnsHunterScreen(
+                11 -> DnsHunterScreen(
                     state = uiState.dnsHunter,
                     onRun = viewModel::runDnsHunter
                 )
                 else -> SettingsScreen(
-                    config = uiState.config,
+                    uiState = uiState,
                     onConfigChanged = viewModel::updateConfig,
-                    onGeneratedConfig = viewModel::updateGeneratedConfig
+                    onGeneratedConfig = viewModel::updateGeneratedConfig,
+                    onThemeChanged = viewModel::updateTheme,
+                    onLanguageChanged = viewModel::updateLanguage,
+                    onBuildBackup = viewModel::buildSettingsBackup,
+                    onRestoreBackup = viewModel::restoreSettingsBackup
                 )
             }
         }
     }
 }
 @Composable
-fun HomeScreen(uiState: ScanUiState, context: Context, onToggleFavorite: (IpResult) -> Unit) {
+fun HomeScreen(uiState: ScanUiState, context: Context, onToggleFavorite: (IpResult) -> Unit, onRunSpeedTest: () -> Unit) {
     val healthyResults = remember(uiState.results) { healthyExportResults(uiState.results) }
     var selectedRegion by remember { mutableStateOf("All") }
     var selectedSort by remember { mutableStateOf(ResultSortOption.LATENCY) }
@@ -412,6 +479,8 @@ fun HomeScreen(uiState: ScanUiState, context: Context, onToggleFavorite: (IpResu
         }
         Spacer(modifier = Modifier.height(8.dp))
         LatencySparkline(samples = uiState.latencySamples, isRunning = uiState.isRunning)
+        Spacer(modifier = Modifier.height(8.dp))
+        SpeedTestPanel(state = uiState.speedTest, onRun = onRunSpeedTest)
         Spacer(modifier = Modifier.height(8.dp))
         if (uiState.hasCompletedScan || healthyResults.isNotEmpty()) {
             HealthyExportControls(
@@ -755,6 +824,224 @@ private fun IpResultCard(result: IpResult, isFavorite: Boolean, onToggleFavorite
         }
     }
 }
+
+@Composable
+private fun SpeedTestPanel(state: SpeedTestUiState, onRun: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Speed Test", fontWeight = FontWeight.Bold, color = MehrpolCyan)
+                    Text("Download and upload check across healthy IPs", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+                Button(
+                    onClick = onRun,
+                    enabled = !state.isRunning,
+                    colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background)
+                ) {
+                    Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (state.isRunning) "Testing" else "Run", fontWeight = FontWeight.Bold)
+                }
+            }
+            if (state.isRunning || state.progress > 0f) {
+                LinearProgressIndicator(
+                    progress = { state.progress.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = MehrpolCyan,
+                    trackColor = Color.Gray.copy(alpha = 0.25f)
+                )
+            }
+            state.error?.let { Text(it, color = MehrpolError, fontSize = 12.sp) }
+            state.results.take(5).forEach { result ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(result.endpoint, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(
+                        if (result.isRunning) "Queued" else String.format(Locale.US, "%.1f / %.1f Mbps", result.downloadMbps, result.uploadMbps),
+                        color = if (result.downloadMbps > 0.0) MehrpolSuccess else Color.Gray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WarpScannerScreen(state: WarpScannerUiState, onRun: () -> Unit, context: Context) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Text("Warp Scanner", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
+            Text("Find the lowest-latency WireGuard endpoint and generate a config", fontSize = 12.sp, color = Color.Gray)
+        }
+        item {
+            Button(
+                onClick = onRun,
+                enabled = !state.isRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (state.isRunning) "Scanning..." else "Scan Warp Endpoints", fontWeight = FontWeight.Bold)
+            }
+        }
+        state.error?.let { item { Text(it, color = MehrpolError, fontWeight = FontWeight.Medium) } }
+        if (state.generatedConfig.isNotBlank()) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Best WireGuard config", color = MehrpolSuccess, fontWeight = FontWeight.Bold)
+                        Text(state.generatedConfig, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = {
+                                    copyText(context, "WireGuard config", state.generatedConfig)
+                                    Toast.makeText(context, "Config copied", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Copy", fontWeight = FontWeight.Bold) }
+                            OutlinedButton(
+                                onClick = { shareText(context, "mehrpol WireGuard config", state.generatedConfig) },
+                                border = BorderStroke(1.dp, MehrpolCyan),
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Export", color = MehrpolCyan, fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                }
+            }
+        }
+        items(state.results) { result -> WarpEndpointRow(result) }
+    }
+}
+
+@Composable
+private fun WarpEndpointRow(result: WarpEndpointResult) {
+    val color = if (result.isReachable) MehrpolSuccess else MehrpolError
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (result.isReachable) Icons.Default.Check else Icons.Default.Close, contentDescription = null, tint = color)
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(result.endpoint, fontWeight = FontWeight.Bold)
+                Text(String.format(Locale.US, "loss %.0f%%", result.packetLoss), color = Color.Gray, fontSize = 12.sp)
+            }
+            Text(if (result.latencyMs >= 0) "${result.latencyMs} ms" else "failed", color = color, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun ProxyCheckerScreen(state: ProxyCheckerUiState, onRun: (String) -> Unit, context: Context) {
+    var input by remember(state.input) { mutableStateOf(state.input) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Text("Proxy Checker", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
+            Text("Paste VLESS, VMess, Trojan, Shadowsocks, or Clash entries", fontSize = 12.sp, color = Color.Gray)
+        }
+        item {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                label = { Text("Configs or subscription text") },
+                minLines = 6,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        item {
+            Button(
+                onClick = { onRun(input) },
+                enabled = !state.isRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (state.isRunning) "Testing..." else "Test Configs", fontWeight = FontWeight.Bold) }
+        }
+        state.error?.let { item { Text(it, color = MehrpolError, fontWeight = FontWeight.Medium) } }
+        items(state.results) { result -> ProxyResultRow(result, context) }
+    }
+}
+
+@Composable
+fun SubscriptionParserScreen(state: SubscriptionParserUiState, onRun: (String) -> Unit, context: Context) {
+    var input by remember(state.input) { mutableStateOf(state.input) }
+    val best = state.results.firstOrNull { it.isWorking }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Text("Subscription Parser", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
+            Text("Accepts subscription URL, base64 text, V2Ray/Xray links, and Clash lists", fontSize = 12.sp, color = Color.Gray)
+        }
+        item {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                label = { Text("URL or encoded subscription") },
+                minLines = 5,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        item {
+            Button(
+                onClick = { onRun(input) },
+                enabled = !state.isRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (state.isRunning) "Parsing..." else "Parse and Test", fontWeight = FontWeight.Bold) }
+        }
+        state.error?.let { item { Text(it, color = MehrpolError, fontWeight = FontWeight.Medium) } }
+        if (best != null) {
+            item {
+                Button(
+                    onClick = {
+                        copyText(context, "Best config", best.config)
+                        Toast.makeText(context, "Best config copied", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MehrpolSuccess, contentColor = MaterialTheme.colorScheme.background),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Copy Best Config (${best.latencyMs} ms)", fontWeight = FontWeight.Bold) }
+            }
+        }
+        item { Text("Parsed ${state.parsedConfigs.size} configs", color = Color.Gray, fontSize = 12.sp) }
+        items(state.results) { result -> ProxyResultRow(result, context) }
+    }
+}
+
+@Composable
+private fun ProxyResultRow(result: ProxyCheckResult, context: Context) {
+    val color = if (result.isWorking) MehrpolSuccess else MehrpolError
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (result.isWorking) Icons.Default.Check else Icons.Default.Close, contentDescription = null, tint = color)
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(result.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${result.protocol} ${result.host}:${result.port}", color = Color.Gray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(result.detail, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text(if (result.isWorking) "${result.latencyMs} ms" else "Failed", color = color, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            IconButton(onClick = {
+                copyText(context, "Proxy config", result.config)
+                Toast.makeText(context, "Config copied", Toast.LENGTH_SHORT).show()
+            }) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy config", tint = MehrpolCyan)
+            }
+        }
+    }
+}
+
 @Composable
 fun HistoryScreen(history: List<ScanHistoryEntry>) {
     LazyColumn(
@@ -869,6 +1156,23 @@ private fun ExportDialog(
 private fun copyText(context: Context, label: String, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+}
+
+private fun shareText(context: Context, title: String, text: String) {
+    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_SUBJECT, title)
+        putExtra(android.content.Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(android.content.Intent.createChooser(intent, title))
+}
+
+private fun buildShareResultsText(results: List<IpResult>): String {
+    return results.take(100).joinToString("
+") { result ->
+        val status = if (result.phase2Status || result.isHealthy) "healthy" else "failed"
+        "${result.ip}:${result.port} | $status | ${result.latencyMs} ms | ${result.colo} | ${formatSpeed(result.phase2Speed)}"
+    }
 }
 private fun healthyExportResults(results: List<IpResult>): List<IpResult> {
     val phase2 = results.filter { it.isPhase2 }
@@ -2279,7 +2583,17 @@ fun StatCard(title: String, value: String, modifier: Modifier = Modifier, valueC
     }
 }
 @Composable
-fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit, onGeneratedConfig: (String) -> Unit) {
+fun SettingsScreen(
+    uiState: ScanUiState,
+    onConfigChanged: (ScanConfig) -> Unit,
+    onGeneratedConfig: (String) -> Unit,
+    onThemeChanged: (AppThemeMode) -> Unit,
+    onLanguageChanged: (AppLanguage) -> Unit,
+    onBuildBackup: () -> String,
+    onRestoreBackup: (String) -> Unit
+) {
+    val config = uiState.config
+    val settings = uiState.settings
     val context = LocalContext.current
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -2303,6 +2617,86 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit, on
         item {
             Text("mehrpol Settings", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
+        }
+        item {
+            SettingSection("Appearance", "Material 3 theme and language") {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = settings.themeMode == AppThemeMode.DARK,
+                        onClick = { onThemeChanged(AppThemeMode.DARK) },
+                        label = { Text("Dark") },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MehrpolCyan, selectedLabelColor = MaterialTheme.colorScheme.background)
+                    )
+                    FilterChip(
+                        selected = settings.themeMode == AppThemeMode.LIGHT,
+                        onClick = { onThemeChanged(AppThemeMode.LIGHT) },
+                        label = { Text("Light") },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MehrpolCyan, selectedLabelColor = MaterialTheme.colorScheme.background)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                CompactDropdown(
+                    label = "Language",
+                    value = settings.language.label,
+                    options = AppLanguage.entries.map { it.label },
+                    onSelected = { label -> AppLanguage.entries.firstOrNull { it.label == label }?.let(onLanguageChanged) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (settings.language == AppLanguage.FARSI) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("پشتیبانی فارسی فعال است", color = MehrpolSuccess, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        item {
+            var restoreText by remember { mutableStateOf("") }
+            SettingSection("Backup and Restore", "export scanner settings as JSON") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = {
+                            val backup = onBuildBackup()
+                            copyText(context, "mehrpol backup", backup)
+                            Toast.makeText(context, "Backup copied", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Backup", fontWeight = FontWeight.Bold) }
+                    OutlinedButton(
+                        onClick = { shareText(context, "mehrpol backup", settings.backupText.ifBlank { onBuildBackup() }) },
+                        border = BorderStroke(1.dp, MehrpolCyan),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Share", color = MehrpolCyan, fontWeight = FontWeight.Bold) }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = restoreText,
+                    onValueChange = { restoreText = it },
+                    label = { Text("Paste backup JSON") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { onRestoreBackup(restoreText) },
+                    enabled = restoreText.isNotBlank(),
+                    border = BorderStroke(1.dp, MehrpolCyan),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Restore", color = MehrpolCyan, fontWeight = FontWeight.Bold) }
+            }
+        }
+        item {
+            SettingSection("Share Results", "send current scan results as text") {
+                Button(
+                    onClick = { shareText(context, "mehrpol scan results", buildShareResultsText(uiState.results.ifEmpty { uiState.persistedResults })) },
+                    enabled = uiState.results.isNotEmpty() || uiState.persistedResults.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MehrpolPrimary, contentColor = Color.White),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Share Results", fontWeight = FontWeight.Bold)
+                }
+            }
         }
         // 1. Source
         item {

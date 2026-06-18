@@ -106,5 +106,8 @@ dependencies {
   androidTestImplementation(libs.androidx.test.espresso.core)
 
   implementation(libs.kotlinx.serialization.json)
+  implementation(libs.androidx.room.runtime)
+  implementation(libs.androidx.room.ktx)
+  annotationProcessor(libs.androidx.room.compiler)
   implementation(files("libs/mehrpol.aar"))
 }

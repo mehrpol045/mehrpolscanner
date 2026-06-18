@@ -1,6 +1,9 @@
 package com.mehrpol.ui.main
 
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -12,12 +15,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import com.mehrpol.mobile.Callback
+import com.mehrpol.data.db.AppDatabase
+import com.mehrpol.data.db.ScanResultEntity
 import com.mehrpol.mobile.Mobile
 import java.io.BufferedReader
+import java.io.OutputStreamWriter
 import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.DatagramPacket
@@ -27,10 +35,12 @@ import java.net.InetSocketAddress
 import java.net.InetAddress
 import java.net.URL
 import java.net.Socket
+import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.random.Random
+import kotlin.math.roundToInt
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -207,6 +217,81 @@ data class DnsHunterUiState(
     val error: String? = null
 )
 
+data class WarpEndpointResult(
+    val endpoint: String,
+    val host: String,
+    val port: Int,
+    val latencyMs: Long,
+    val packetLoss: Double,
+    val isReachable: Boolean,
+    val generatedConfig: String = ""
+)
+
+data class WarpScannerUiState(
+    val isRunning: Boolean = false,
+    val results: List<WarpEndpointResult> = emptyList(),
+    val generatedConfig: String = "",
+    val error: String? = null
+)
+
+data class ProxyCheckResult(
+    val name: String,
+    val config: String,
+    val protocol: String,
+    val host: String,
+    val port: Int,
+    val isWorking: Boolean,
+    val latencyMs: Long,
+    val detail: String
+)
+
+data class ProxyCheckerUiState(
+    val isRunning: Boolean = false,
+    val input: String = "",
+    val results: List<ProxyCheckResult> = emptyList(),
+    val error: String? = null
+)
+
+data class SpeedTestResult(
+    val endpoint: String,
+    val downloadMbps: Double,
+    val uploadMbps: Double,
+    val progress: Float,
+    val isRunning: Boolean = false,
+    val detail: String = "Not tested"
+)
+
+data class SpeedTestUiState(
+    val isRunning: Boolean = false,
+    val progress: Float = 0f,
+    val results: List<SpeedTestResult> = emptyList(),
+    val error: String? = null
+)
+
+data class SubscriptionParserUiState(
+    val isRunning: Boolean = false,
+    val input: String = "",
+    val parsedConfigs: List<String> = emptyList(),
+    val results: List<ProxyCheckResult> = emptyList(),
+    val error: String? = null
+)
+
+@Serializable
+enum class AppThemeMode { DARK, LIGHT }
+
+@Serializable
+enum class AppLanguage(val label: String) {
+    ENGLISH("English"),
+    FARSI("فارسی")
+}
+
+@Serializable
+data class SettingsUiState(
+    val themeMode: AppThemeMode = AppThemeMode.DARK,
+    val language: AppLanguage = AppLanguage.ENGLISH,
+    val backupText: String = ""
+)
+
 data class SniSpoofUiState(
     val isRunning: Boolean = false,
     val results: List<SniCheckResult> = emptyList(),
@@ -254,13 +339,29 @@ data class ScanUiState(
     val domains: DomainsUiState = DomainsUiState(),
     val dns: DnsUiState = DnsUiState(),
     val dnsHunter: DnsHunterUiState = DnsHunterUiState(),
+    val warpScanner: WarpScannerUiState = WarpScannerUiState(),
+    val proxyChecker: ProxyCheckerUiState = ProxyCheckerUiState(),
+    val speedTest: SpeedTestUiState = SpeedTestUiState(),
+    val subscriptionParser: SubscriptionParserUiState = SubscriptionParserUiState(),
+    val settings: SettingsUiState = SettingsUiState(),
+    val persistedResults: List<IpResult> = emptyList(),
     val autoReplacedConfig: String = ""
 )
 
-class MainViewModel : ViewModel() {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+    private val database = AppDatabase.get(application)
+    private val scanResultDao = database.scanResultDao()
     private val _uiState = MutableStateFlow(ScanUiState())
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
     private var monitorJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            scanResultDao.observeRecent(500).collectLatest { entities ->
+                _uiState.value = _uiState.value.copy(persistedResults = entities.map { it.toIpResult() })
+            }
+        }
+    }
 
     private val scanCallback = object : Callback {
         override fun onProgress(tested: Long, healthy: Long, failed: Long, inFlight: Long, isPhase2: Boolean) {
@@ -292,6 +393,7 @@ class MainViewModel : ViewModel() {
                 current.latencySamples
             }
             val updatedConfig = maybeReplaceSavedConfig(current, res)
+            persistScanResult(res)
             _uiState.value = current.copy(
                 results = newList,
                 latencySamples = newSamples,
@@ -1034,6 +1136,349 @@ class MainViewModel : ViewModel() {
             .lowercase(Locale.US)
     }
 
+
+    fun runWarpScan() {
+        if (_uiState.value.warpScanner.isRunning) return
+        _uiState.value = _uiState.value.copy(warpScanner = WarpScannerUiState(isRunning = true))
+        viewModelScope.launch {
+            val endpoints = defaultWarpEndpoints()
+            val results = withContext(Dispatchers.IO) {
+                endpoints.map { endpoint -> async { testWarpEndpoint(endpoint) } }.awaitAll()
+            }.sortedWith(compareBy<WarpEndpointResult> { if (it.isReachable) it.latencyMs else Long.MAX_VALUE }.thenBy { it.packetLoss })
+            val best = results.firstOrNull { it.isReachable }
+            _uiState.value = _uiState.value.copy(
+                warpScanner = WarpScannerUiState(
+                    isRunning = false,
+                    results = results,
+                    generatedConfig = best?.generatedConfig.orEmpty(),
+                    error = if (best == null) "No reachable WARP endpoint found" else null
+                )
+            )
+        }
+    }
+
+    fun runProxyCheck(input: String) {
+        val configs = extractProxyConfigs(input)
+        if (configs.isEmpty()) {
+            _uiState.value = _uiState.value.copy(proxyChecker = ProxyCheckerUiState(input = input, error = "No supported proxy configs found"))
+            return
+        }
+        _uiState.value = _uiState.value.copy(proxyChecker = ProxyCheckerUiState(isRunning = true, input = input))
+        viewModelScope.launch {
+            val results = withContext(Dispatchers.IO) {
+                configs.map { config -> async { testProxyConfig(config) } }.awaitAll()
+            }.sortedBy { if (it.isWorking) it.latencyMs else Long.MAX_VALUE }
+            _uiState.value = _uiState.value.copy(proxyChecker = ProxyCheckerUiState(input = input, results = results))
+        }
+    }
+
+    fun runSpeedTest() {
+        if (_uiState.value.speedTest.isRunning) return
+        val candidates = (_uiState.value.results.filter { it.isHealthy || it.phase2Status } + _uiState.value.persistedResults.filter { it.isHealthy || it.phase2Status })
+            .distinctBy { "${it.ip}:${it.port}" }
+            .sortedBy { if (it.latencyMs > 0) it.latencyMs else Int.MAX_VALUE }
+            .take(5)
+        if (candidates.isEmpty()) {
+            _uiState.value = _uiState.value.copy(speedTest = SpeedTestUiState(error = "Run a scan first or load saved healthy IPs"))
+            return
+        }
+        _uiState.value = _uiState.value.copy(speedTest = SpeedTestUiState(isRunning = true, results = candidates.map { SpeedTestResult("${it.ip}:${it.port}", 0.0, 0.0, 0f, true) }))
+        viewModelScope.launch {
+            val results = mutableListOf<SpeedTestResult>()
+            candidates.forEachIndexed { index, candidate ->
+                val result = withContext(Dispatchers.IO) { measureEndpointSpeed(candidate) }
+                results += result
+                _uiState.value = _uiState.value.copy(
+                    speedTest = SpeedTestUiState(
+                        isRunning = index < candidates.lastIndex,
+                        progress = (index + 1).toFloat() / candidates.size.toFloat(),
+                        results = results + candidates.drop(index + 1).map { SpeedTestResult("${it.ip}:${it.port}", 0.0, 0.0, 0f, true) }
+                    )
+                )
+            }
+            _uiState.value = _uiState.value.copy(speedTest = _uiState.value.speedTest.copy(isRunning = false, progress = 1f))
+        }
+    }
+
+    fun parseSubscription(input: String) {
+        val configs = extractProxyConfigs(decodeSubscriptionInput(input))
+        if (configs.isEmpty()) {
+            _uiState.value = _uiState.value.copy(subscriptionParser = SubscriptionParserUiState(input = input, error = "No supported subscription entries found"))
+            return
+        }
+        _uiState.value = _uiState.value.copy(subscriptionParser = SubscriptionParserUiState(isRunning = true, input = input, parsedConfigs = configs))
+        viewModelScope.launch {
+            val results = withContext(Dispatchers.IO) {
+                configs.map { config -> async { testProxyConfig(config) } }.awaitAll()
+            }.sortedBy { if (it.isWorking) it.latencyMs else Long.MAX_VALUE }
+            _uiState.value = _uiState.value.copy(subscriptionParser = SubscriptionParserUiState(input = input, parsedConfigs = configs, results = results))
+        }
+    }
+
+    fun updateTheme(mode: AppThemeMode) {
+        _uiState.value = _uiState.value.copy(settings = _uiState.value.settings.copy(themeMode = mode))
+    }
+
+    fun updateLanguage(language: AppLanguage) {
+        _uiState.value = _uiState.value.copy(settings = _uiState.value.settings.copy(language = language))
+    }
+
+    fun buildSettingsBackup(): String {
+        val state = _uiState.value
+        val backup = AppBackup(state.config, state.settings)
+        val content = Json.encodeToString(backup)
+        _uiState.value = state.copy(settings = state.settings.copy(backupText = content))
+        return content
+    }
+
+    fun restoreSettingsBackup(content: String) {
+        try {
+            val backup = Json.decodeFromString<AppBackup>(content)
+            _uiState.value = _uiState.value.copy(config = backup.config, settings = backup.settings.copy(backupText = content))
+        } catch (e: Exception) {
+            _uiState.value = _uiState.value.copy(error = "Restore failed: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    private fun persistScanResult(result: IpResult) {
+        viewModelScope.launch(Dispatchers.IO) {
+            scanResultDao.insertBlocking(result.toEntity())
+            scanResultDao.trimBlocking(2000)
+        }
+    }
+
+    private fun defaultWarpEndpoints(): List<String> {
+        val hosts = listOf("162.159.192.1", "162.159.192.2", "162.159.193.1", "162.159.193.2", "188.114.96.1", "188.114.97.1")
+        return hosts.flatMap { host -> listOf(2408, 500, 1701, 4500).map { port -> "$host:$port" } }
+    }
+
+    private fun testWarpEndpoint(endpoint: String): WarpEndpointResult {
+        val host = endpoint.substringBefore(':')
+        val port = endpoint.substringAfter(':', "2408").toIntOrNull() ?: 2408
+        val latencies = (1..4).mapNotNull { udpProbeLatency(host, port, 1_800) }
+        val loss = ((4 - latencies.size).toDouble() / 4.0) * 100.0
+        val latency = latencies.takeIf { it.isNotEmpty() }?.average()?.roundToInt()?.toLong() ?: -1L
+        val reachable = latencies.isNotEmpty()
+        return WarpEndpointResult(
+            endpoint = endpoint,
+            host = host,
+            port = port,
+            latencyMs = latency,
+            packetLoss = loss,
+            isReachable = reachable,
+            generatedConfig = if (reachable) buildWireGuardConfig(host, port) else ""
+        )
+    }
+
+    private fun udpProbeLatency(host: String, port: Int, timeoutMs: Int): Long? {
+        val started = System.currentTimeMillis()
+        return try {
+            DatagramSocket().use { socket ->
+                socket.soTimeout = timeoutMs
+                val payload = byteArrayOf(1, 0, 0, 0)
+                val target = InetAddress.getByName(host)
+                socket.send(DatagramPacket(payload, payload.size, target, port))
+            }
+            System.currentTimeMillis() - started
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun buildWireGuardConfig(host: String, port: Int): String {
+        return """
+[Interface]
+PrivateKey = REPLACE_WITH_YOUR_WARP_PRIVATE_KEY
+Address = 172.16.0.2/32, 2606:4700:110:8b7b:11f9:4d2b:cf8a:fedc/128
+DNS = 1.1.1.1, 1.0.0.1
+MTU = 1280
+
+[Peer]
+PublicKey = bmXOC+F1WE7 /rTsM3e+PksZb3S+Fi1T1btV0pomf9xE=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = $host:$port
+PersistentKeepalive = 25
+""".trimIndent().replace("WE7 /", "WE7/")
+    }
+
+    private fun testProxyConfig(config: String): ProxyCheckResult {
+        val parsed = parseProxyEndpoint(config) ?: return ProxyCheckResult("Unsupported", config, "Unknown", "", 0, false, 0, "Unsupported or malformed config")
+        val started = System.currentTimeMillis()
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(parsed.host, parsed.port), 7_000)
+            }
+            ProxyCheckResult(parsed.name, config, parsed.protocol, parsed.host, parsed.port, true, System.currentTimeMillis() - started, "Endpoint TCP reachable")
+        } catch (e: Exception) {
+            ProxyCheckResult(parsed.name, config, parsed.protocol, parsed.host, parsed.port, false, System.currentTimeMillis() - started, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun parseProxyEndpoint(config: String): ParsedProxy? {
+        val clean = config.trim()
+        if (clean.isBlank()) return null
+        return when {
+            clean.startsWith("vmess://", ignoreCase = true) -> parseVmess(clean)
+            clean.startsWith("vless://", ignoreCase = true) || clean.startsWith("trojan://", ignoreCase = true) || clean.startsWith("ss://", ignoreCase = true) -> parseUriProxy(clean)
+            clean.contains("server:") && clean.contains("port:") -> parseClashProxy(clean)
+            else -> null
+        }
+    }
+
+    private fun parseUriProxy(config: String): ParsedProxy? {
+        return try {
+            val uri = URI(config)
+            val protocol = uri.scheme.uppercase(Locale.US)
+            val host = uri.host ?: return parseAuthorityProxy(config, protocol)
+            val port = if (uri.port > 0) uri.port else defaultProxyPort(protocol)
+            ParsedProxy(protocol, host, port, uri.fragment ?: "$protocol $host")
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseAuthorityProxy(config: String, protocol: String): ParsedProxy? {
+        val authority = config.substringAfter("://").substringBefore('?').substringBefore('#')
+        val hostPort = authority.substringAfterLast('@')
+        val host = hostPort.substringBeforeLast(':', "")
+        val port = hostPort.substringAfterLast(':', "").toIntOrNull() ?: defaultProxyPort(protocol)
+        if (host.isBlank()) return null
+        return ParsedProxy(protocol, host, port, "$protocol $host")
+    }
+
+    private fun parseVmess(config: String): ParsedProxy? {
+        val payload = config.removePrefix("vmess://").trim()
+        val decoded = runCatching { String(android.util.Base64.decode(payload, android.util.Base64.DEFAULT), Charsets.UTF_8) }.getOrNull() ?: return null
+        val host = Regex("\\\"add\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").find(decoded)?.groupValues?.get(1) ?: return null
+        val port = Regex("\\\"port\\\"\\s*:\\s*\\\"?([0-9]+)\\\"?").find(decoded)?.groupValues?.get(1)?.toIntOrNull() ?: 443
+        val name = Regex("\\\"ps\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").find(decoded)?.groupValues?.get(1) ?: "VMess $host"
+        return ParsedProxy("VMess", host, port, name)
+    }
+
+    private fun parseClashProxy(config: String): ParsedProxy? {
+        val server = Regex("server:\\s*([^\\s#]+)").find(config)?.groupValues?.get(1)?.trim('"', '\'') ?: return null
+        val port = Regex("port:\\s*([0-9]+)").find(config)?.groupValues?.get(1)?.toIntOrNull() ?: 443
+        val type = Regex("type:\\s*([^\\s#]+)").find(config)?.groupValues?.get(1)?.uppercase(Locale.US) ?: "Clash"
+        val name = Regex("name:\\s*([^\\n#]+)").find(config)?.groupValues?.get(1)?.trim('"', '\'') ?: "$type $server"
+        return ParsedProxy(type, server, port, name)
+    }
+
+    private fun defaultProxyPort(protocol: String): Int = when (protocol.uppercase(Locale.US)) {
+        "SS" -> 8388
+        else -> 443
+    }
+
+    private fun extractProxyConfigs(input: String): List<String> {
+        val normalized = decodeSubscriptionInput(input)
+        val lines = normalized.lines().map { it.trim() }.filter { it.isNotBlank() }
+        val direct = lines.filter { line -> SUPPORTED_PROXY_PREFIXES.any { line.startsWith(it, ignoreCase = true) } }
+        if (direct.isNotEmpty()) return direct.distinct()
+        return Regex("(vless|vmess|trojan|ss)://[^\\s]+", RegexOption.IGNORE_CASE)
+            .findAll(normalized)
+            .map { it.value.trim() }
+            .toList()
+            .distinct()
+    }
+
+    private fun decodeSubscriptionInput(input: String): String {
+        val clean = input.trim()
+        if (clean.startsWith("http://", true) || clean.startsWith("https://", true)) {
+            return runCatching { URL(clean).readText() }.getOrDefault(clean)
+        }
+        return runCatching { String(android.util.Base64.decode(clean, android.util.Base64.DEFAULT), Charsets.UTF_8) }
+            .getOrDefault(clean)
+    }
+
+    private fun measureEndpointSpeed(result: IpResult): SpeedTestResult {
+        val endpoint = "${result.ip}:${result.port}"
+        val started = System.currentTimeMillis()
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(result.ip, result.port), 5_000)
+            }
+            val download = httpByteSpeed("https://speed.cloudflare.com/__down?bytes=1000000", 12_000)
+            val upload = httpUploadSpeed("https://speed.cloudflare.com/__up", 512 * 1024, 12_000)
+            SpeedTestResult(endpoint, download, upload, 1f, false, "Measured via Cloudflare speed endpoint in ${(System.currentTimeMillis() - started) / 1000.0}s")
+        } catch (e: Exception) {
+            SpeedTestResult(endpoint, 0.0, 0.0, 1f, false, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun httpByteSpeed(url: String, timeoutMs: Int): Double {
+        val started = System.currentTimeMillis()
+        var bytes = 0L
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = timeoutMs
+        connection.readTimeout = timeoutMs
+        return try {
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(32 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    bytes += read
+                }
+            }
+            val seconds = ((System.currentTimeMillis() - started).coerceAtLeast(1)).toDouble() / 1000.0
+            (bytes.toDouble() * 8.0) / seconds / 1_000_000.0
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun httpUploadSpeed(url: String, bytes: Int, timeoutMs: Int): Double {
+        val payload = ByteArray(bytes) { (it % 251).toByte() }
+        val started = System.currentTimeMillis()
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = timeoutMs
+        connection.readTimeout = timeoutMs
+        connection.doOutput = true
+        connection.requestMethod = "POST"
+        return try {
+            OutputStreamWriter(connection.outputStream).use { writer -> writer.write(String(payload, Charsets.ISO_8859_1)) }
+            connection.responseCode
+            val seconds = ((System.currentTimeMillis() - started).coerceAtLeast(1)).toDouble() / 1000.0
+            (bytes.toDouble() * 8.0) / seconds / 1_000_000.0
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun IpResult.toEntity(): ScanResultEntity = ScanResultEntity(
+        ip,
+        port,
+        latencyMs,
+        loss,
+        colo,
+        isHealthy,
+        isPhase2,
+        phase2Type,
+        phase2Speed,
+        phase2Status,
+        jitterMs,
+        datacenterName,
+        countryCode,
+        region,
+        System.currentTimeMillis()
+    )
+
+    private fun ScanResultEntity.toIpResult(): IpResult = IpResult(
+        ip = ip,
+        port = port,
+        latencyMs = latencyMs,
+        loss = loss,
+        colo = colo,
+        isHealthy = isHealthy,
+        isPhase2 = isPhase2,
+        phase2Type = phase2Type,
+        phase2Speed = phase2Speed,
+        phase2Status = phase2Status,
+        jitterMs = jitterMs,
+        datacenterName = datacenterName,
+        countryCode = countryCode,
+        region = region
+    )
+
     fun dismissError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
@@ -1134,5 +1579,31 @@ class MainViewModel : ViewModel() {
             "TLV" to CloudflarePopInfo("Tel Aviv", "IL", "Middle East")
         )
 
+    }
+}
+
+
+@Serializable
+private data class AppBackup(
+    val config: ScanConfig,
+    val settings: SettingsUiState
+)
+
+private data class ParsedProxy(
+    val protocol: String,
+    val host: String,
+    val port: Int,
+    val name: String
+)
+
+private val SUPPORTED_PROXY_PREFIXES = listOf("vless://", "vmess://", "trojan://", "ss://")
+
+class MainViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
+            return MainViewModel(application) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class ${modelClass.name}")
     }
 }
