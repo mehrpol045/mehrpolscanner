@@ -7,20 +7,39 @@ import (
 	"time"
 )
 
+type CertInfo struct {
+	CN       string
+	Issuer   string
+	Expiry   time.Time
+	DNSNames []string
+}
+
 // Result holds all measured statistics for a single Cloudflare IP.
 type Result struct {
-	IP          net.IP
-	Port        int
-	ProbeMode   string          // tcp | tls | http
-	Latencies   []time.Duration // per-try latencies; 0 = failed try
-	TLSOk       bool
-	WSOk        bool // WebSocket connection survived hold test
-	RequireWS   bool // true when WebSocket success is part of health criteria
-	HTTPStatus  int
-	Colo        string
-	Throughput  float64 // bytes/sec, 0 if not measured
-	SpeedTested bool    // true when a payload download check was attempted
-	Timestamp   time.Time
+	IP           net.IP
+	Port         int
+	ProbeMode    string          // tcp | tls | http
+	Latencies    []time.Duration // per-try latencies; 0 = failed try
+	TLSOk        bool
+	WSOk         bool // WebSocket connection survived hold test
+	RequireWS    bool // true when WebSocket success is part of health criteria
+	HTTPStatus   int
+	Colo         string
+	Country      string
+	ASN          int
+	ASNOrg       string
+	CDNStatus    string
+	BlockedIR    bool
+	SNI          string
+	BestSNI      string
+	TestedSNIs   []string
+	CertCN       string
+	CertIssuer   string
+	CertExpiry   time.Time
+	CertDNSNames []string
+	Throughput   float64 // bytes/sec, 0 if not measured
+	SpeedTested  bool    // true when a payload download check was attempted
+	Timestamp    time.Time
 }
 
 // Loss returns packet loss percentage (0–100).

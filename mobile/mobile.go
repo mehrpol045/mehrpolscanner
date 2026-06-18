@@ -14,10 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/matinsenpai/senpaiscanner/internal/ipsrc"
-	"github.com/matinsenpai/senpaiscanner/internal/prober"
-	"github.com/matinsenpai/senpaiscanner/internal/result"
-	"github.com/matinsenpai/senpaiscanner/internal/xraytest"
+	"github.com/matinsenpai/mehrpol/internal/ipsrc"
+	"github.com/matinsenpai/mehrpol/internal/prober"
+	"github.com/matinsenpai/mehrpol/internal/result"
+	"github.com/matinsenpai/mehrpol/internal/xraytest"
 )
 
 type Callback interface {

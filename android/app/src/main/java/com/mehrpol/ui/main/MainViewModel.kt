@@ -1,14 +1,26 @@
-package com.matinsenpai.senpaiscanner.ui.main
+package com.mehrpol.ui.main
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import com.matinsenpai.senpaiscanner.mobile.Callback
-import com.matinsenpai.senpaiscanner.mobile.Mobile
+import com.mehrpol.mobile.Callback
+import com.mehrpol.mobile.Mobile
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.PrintWriter
+import java.net.InetSocketAddress
+import java.net.Socket
+import javax.net.ssl.SNIHostName
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 
 @Serializable
 data class ScanConfig(
@@ -51,6 +63,23 @@ data class IpResult(
     val phase2Status: Boolean = false
 )
 
+
+data class SniCheckResult(
+    val host: String,
+    val sni: String,
+    val port: Int,
+    val status: String,
+    val latencyMs: Long,
+    val isValid: Boolean,
+    val message: String
+)
+
+data class SniCheckUiState(
+    val isRunning: Boolean = false,
+    val result: SniCheckResult? = null,
+    val error: String? = null
+)
+
 data class ScanUiState(
     val isRunning: Boolean = false,
     val tested: Int = 0,
@@ -61,7 +90,8 @@ data class ScanUiState(
     val totalPhase2: Int = 0,
     val results: List<IpResult> = emptyList(),
     val error: String? = null,
-    val config: ScanConfig = ScanConfig()
+    val config: ScanConfig = ScanConfig(),
+    val sniCheck: SniCheckUiState = SniCheckUiState()
 )
 
 class MainViewModel : ViewModel() {
@@ -125,6 +155,74 @@ class MainViewModel : ViewModel() {
         }
     }
     
+
+    fun runSniCheck(host: String, sni: String, portText: String) {
+        val cleanHost = host.trim()
+        val cleanSni = sni.trim()
+        val port = portText.trim().toIntOrNull() ?: 443
+        if (cleanHost.isEmpty() || cleanSni.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                sniCheck = SniCheckUiState(error = "Host and SNI are required")
+            )
+            return
+        }
+        if (port !in 1..65535) {
+            _uiState.value = _uiState.value.copy(
+                sniCheck = SniCheckUiState(error = "Port must be between 1 and 65535")
+            )
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(sniCheck = SniCheckUiState(isRunning = true))
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { checkSni(cleanHost, cleanSni, port) }
+            _uiState.value = _uiState.value.copy(sniCheck = SniCheckUiState(result = result))
+        }
+    }
+
+    private fun checkSni(host: String, sni: String, port: Int): SniCheckResult {
+        val started = System.currentTimeMillis()
+        return try {
+            Socket().use { tcpSocket ->
+                tcpSocket.connect(InetSocketAddress(host, port), 7000)
+                tcpSocket.soTimeout = 7000
+                val sslSocket = SSLContext.getDefault().socketFactory
+                    .createSocket(tcpSocket, host, port, true) as SSLSocket
+                sslSocket.use { tlsSocket ->
+                    tlsSocket.sslParameters = tlsSocket.sslParameters.apply {
+                        serverNames = listOf(SNIHostName(sni))
+                    }
+                    tlsSocket.startHandshake()
+                    val latency = System.currentTimeMillis() - started
+                    val writer = PrintWriter(tlsSocket.outputStream, false)
+                    writer.print("HEAD / HTTP/1.1\r\nHost: $sni\r\nUser-Agent: mehrpol/1.0\r\nConnection: close\r\n\r\n")
+                    writer.flush()
+                    val statusLine = BufferedReader(InputStreamReader(tlsSocket.inputStream)).readLine()
+                    val status = statusLine?.takeIf { it.startsWith("HTTP/") } ?: "TLS handshake succeeded"
+                    SniCheckResult(
+                        host = host,
+                        sni = sni,
+                        port = port,
+                        status = status,
+                        latencyMs = latency,
+                        isValid = true,
+                        message = "SNI is valid"
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            SniCheckResult(
+                host = host,
+                sni = sni,
+                port = port,
+                status = "Connection failed",
+                latencyMs = System.currentTimeMillis() - started,
+                isValid = false,
+                message = "SNI is blocked or unavailable: ${e.message ?: e.javaClass.simpleName}"
+            )
+        }
+    }
+
     fun dismissError() {
         _uiState.value = _uiState.value.copy(error = null)
     }

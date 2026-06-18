@@ -6,31 +6,23 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Art is the multi-line ASCII art for "SenPai Scanner".
+// Art is the multi-line ASCII art for "mehrpol".
 // Uses box-drawing block characters for a bold, retro look.
 const Art = `
- ░██████╗███████╗███╗░░██╗██████╗░░█████╗░██╗
- ██╔════╝██╔════╝████╗░██║██╔══██╗██╔══██╗██║
- ╚█████╗░█████╗░░██╔██╗██║██████╔╝███████║██║
- ░╚═══██╗██╔══╝░░██║╚████║██╔═══╝░██╔══██║██║
- ██████╔╝███████╗██║░╚███║██║░░░░░██║░░██║██║
- ╚═════╝░╚══════╝╚═╝░░╚══╝╚═╝░░░░░╚═╝░░╚═╝╚═╝
-
- ░██████╗░█████╗░░█████╗░███╗░░██╗███╗░░██╗███████╗██████╗░
- ██╔════╝██╔══██╗██╔══██╗████╗░██║████╗░██║██╔════╝██╔══██╗
- ╚█████╗░██║░░╚═╝███████║██╔██╗██║██╔██╗██║█████╗░░██████╔╝
- ░╚═══██╗██║░░██╗██╔══██║██║╚████║██║╚████║██╔══╝░░██╔══██╗
- ██████╔╝╚█████╔╝██║░░██║██║░╚███║██║░╚███║███████╗██║░░██║
- ╚═════╝░░╚════╝░╚═╝░░╚═╝╚═╝░░╚══╝╚═╝░░╚══╝╚══════╝╚═╝░░╚═╝`
+ ███╗   ███╗███████╗██╗  ██╗██████╗ ██████╗  ██████╗ ██╗     
+ ████╗ ████║██╔════╝██║  ██║██╔══██╗██╔══██╗██╔═══██╗██║     
+ ██╔████╔██║█████╗  ███████║██████╔╝██████╔╝██║   ██║██║     
+ ██║╚██╔╝██║██╔══╝  ██╔══██║██╔══██╗██╔═══╝ ██║   ██║██║     
+ ██║ ╚═╝ ██║███████╗██║  ██║██║  ██║██║     ╚██████╔╝███████╗
+ ╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝      ╚═════╝ ╚══════╝`
 
 // Tagline is shown beneath the art.
-const Tagline = "  Cloudflare IP Scanner — tuned for restricted networks"
+const Tagline = "  Cloudflare connectivity and SNI checks for restricted networks"
 
 // rainbowPalette is a smooth warm→cool gradient used for color cycling.
 var rainbowPalette = []string{
-	"#FF4C4C", "#FF6B35", "#FF8C42", "#FFAE5E", "#FFC94E",
-	"#FFE066", "#C8FF66", "#66FFB2", "#4CF2FF", "#4CB8FF",
-	"#7B6FFF", "#B066FF", "#FF66E0", "#FF4CA8", "#FF4C6E",
+	"#006064", "#00838F", "#0097A7", "#00ACC1", "#00BCD4",
+	"#26C6DA", "#4DD0E1", "#80DEEA", "#B2EBF2", "#E0F7FA",
 }
 
 // Render applies a rainbow gradient to the ASCII art.

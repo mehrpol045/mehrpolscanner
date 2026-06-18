@@ -7,12 +7,40 @@ on:
 
 permissions:
   contents: write
-  packages: write
-  id-token: write
 
 jobs:
-  release:
+  build-go:
+    name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-amd64
+            goos: windows
+            goarch: amd64
+            artifact: mehrpol-windows-amd64.exe
+          - name: windows-arm64
+            goos: windows
+            goarch: arm64
+            artifact: mehrpol-windows-arm64.exe
+          - name: linux-amd64
+            goos: linux
+            goarch: amd64
+            artifact: mehrpol-linux-amd64
+          - name: linux-arm64
+            goos: linux
+            goarch: arm64
+            artifact: mehrpol-linux-arm64
+          - name: darwin-amd64
+            goos: darwin
+            goarch: amd64
+            artifact: mehrpol-darwin-amd64
+          - name: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            artifact: mehrpol-darwin-arm64
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,28 +53,38 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Install syft
-        uses: anchore/sbom-action/download-syft@v0
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
+      - name: Build binary
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COSIGN_EXPERIMENTAL: "true"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p dist
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/matinsenpai/mehrpol/pkg/version.Version=${VERSION} -X github.com/matinsenpai/mehrpol/pkg/version.Commit=${COMMIT} -X github.com/matinsenpai/mehrpol/pkg/version.BuildDate=${BUILD_DATE} -X github.com/matinsenpai/mehrpol/pkg/version.BuiltBy=github-actions" \
+            -o "dist/${{ matrix.artifact }}" \
+            ./cmd/mehrpol
 
-  build-android-release:
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  build-android:
+    name: Build Android APK
     runs-on: ubuntu-latest
-    needs: release
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -54,68 +92,133 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Set up JDK 17
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          distribution: temurin
+          java-version: "17"
 
-      - name: Decode Keystore
-        env:
-          ENCODED_STRING: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          mkdir -p android/keystore
-          echo $ENCODED_STRING | base64 -di > android/keystore/release.keystore
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Build Go Mobile
+      - name: Install Android SDK packages
         run: |
+          sdkmanager --install \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "platform-tools" \
+            "ndk;28.2.13676358"
+
+      - name: Build Go mobile AAR
+        run: |
+          set -euo pipefail
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          go get -tool golang.org/x/mobile/cmd/gobind
+          export PATH="${PATH}:$(go env GOPATH)/bin"
           gomobile init
-          chmod +x ./android/build_go_mobile.sh
-          ./android/build_go_mobile.sh
+          bash ./android/build_go_mobile.sh
 
-      - name: Derive version from tag
+      - name: Prepare Android signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$TAG"
-          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
-          echo "ANDROID_VERSION_NAME=$TAG" >> "$GITHUB_ENV"
-          echo "ANDROID_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          set -euo pipefail
+          mkdir -p android/keystore
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > android/keystore/release.keystore
+          else
+            keytool -genkeypair \
+              -v \
+              -keystore android/keystore/release.keystore \
+              -storepass android \
+              -keypass android \
+              -alias release \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=mehrpol CI,O=mehrpol,C=US"
+          fi
 
-      - name: Build Signed Release APKs
+      - name: Derive Android version
+        run: |
+          set -euo pipefail
+          VERSION_NAME="${GITHUB_REF_NAME#v}"
+          VERSION_CORE="${VERSION_NAME%%[-+]*}"
+          IFS='.' read -r MAJOR MINOR PATCH REST <<< "${VERSION_CORE}"
+          MAJOR="${MAJOR:-0}"
+          MINOR="${MINOR:-0}"
+          PATCH="${PATCH:-0}"
+          if [[ "${MAJOR}" =~ ^[0-9]+$ && "${MINOR}" =~ ^[0-9]+$ && "${PATCH}" =~ ^[0-9]+$ ]]; then
+            VERSION_CODE=$((10#${MAJOR} * 10000 + 10#${MINOR} * 100 + 10#${PATCH}))
+          else
+            VERSION_CODE="${GITHUB_RUN_NUMBER}"
+          fi
+          if [ "${VERSION_CODE}" -le 0 ]; then
+            VERSION_CODE="${GITHUB_RUN_NUMBER}"
+          fi
+          echo "ANDROID_VERSION_NAME=${VERSION_NAME}" >> "${GITHUB_ENV}"
+          echo "ANDROID_VERSION_CODE=${VERSION_CODE}" >> "${GITHUB_ENV}"
+
+      - name: Build release APKs
         working-directory: android
         env:
-          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_VERSION_NAME: ${{ env.ANDROID_VERSION_NAME }}
           ANDROID_VERSION_CODE: ${{ env.ANDROID_VERSION_CODE }}
         run: |
-          chmod +x gradlew
-          ./gradlew :app:assembleRelease --stacktrace
+          set -euo pipefail
+          export ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:-android}"
+          export ORG_GRADLE_PROJECT_KEY_ALIAS="${ANDROID_KEY_ALIAS:-release}"
+          export ORG_GRADLE_PROJECT_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-android}"
+          bash gradlew :app:assembleRelease --stacktrace
 
-      - name: Prepare release files
+      - name: Prepare APK artifacts
         run: |
-          mkdir -p release-artifacts
-          APP_NAME="SenPaiScanner"
+          set -euo pipefail
+          mkdir -p dist
           VERSION="${ANDROID_VERSION_NAME}"
-
           for apk in android/app/build/outputs/apk/release/*.apk; do
-            filename=$(basename "$apk")
-            if [[ "$filename" == "app-universal-release.apk" ]]; then
-              suffix="universal"
-            else
-              suffix=$(echo "$filename" | sed -E 's|^app-(.*)-release\.apk$|\1|')
-            fi
-            cp "$apk" "release-artifacts/${APP_NAME}-${VERSION}-${suffix}-release.apk"
+            filename="$(basename "${apk}")"
+            case "${filename}" in
+              app-universal-release.apk) suffix="universal" ;;
+              app-arm64-v8a-release.apk) suffix="arm64-v8a" ;;
+              app-armeabi-v7a-release.apk) suffix="armeabi-v7a" ;;
+              *) suffix="${filename#app-}"; suffix="${suffix%-release.apk}" ;;
+            esac
+            cp "${apk}" "dist/mehrpol-${VERSION}-${suffix}-release.apk"
           done
+          ls -la dist
 
-          ls -la release-artifacts
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mehrpol-android-apks
+          path: dist/*.apk
+          if-no-files-found: error
 
-      - name: Upload to GitHub Release
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - build-go
+      - build-android
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: List release artifacts
+        run: ls -la release-artifacts
+
+      - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
-          files: release-artifacts/*.apk
+          files: release-artifacts/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

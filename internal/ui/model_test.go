@@ -12,8 +12,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/matinsenpai/senpaiscanner/internal/result"
-	"github.com/matinsenpai/senpaiscanner/internal/xraytest"
+	"github.com/matinsenpai/mehrpol/internal/result"
+	"github.com/matinsenpai/mehrpol/internal/xraytest"
 )
 
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -27,14 +27,17 @@ func newTestApp(t *testing.T) AppModel {
 }
 
 func TestMenuOnlyShowsMainWorkflow(t *testing.T) {
-	if len(menuEntries) != 4 {
-		t.Fatalf("menu entries = %d, want 4", len(menuEntries))
+	if len(menuEntries) != 5 {
+		t.Fatalf("menu entries = %d, want 5", len(menuEntries))
 	}
 	if menuEntries[0].label != "Find Working IPs" {
 		t.Fatalf("first menu item = %q, want Find Working IPs", menuEntries[0].label)
 	}
 	if menuEntries[1].label != "Retry Last Scan" {
 		t.Fatalf("second menu item = %q, want Retry Last Scan", menuEntries[1].label)
+	}
+	if menuEntries[2].label != "SNI Check" {
+		t.Fatalf("third menu item = %q, want SNI Check", menuEntries[2].label)
 	}
 	for _, entry := range menuEntries {
 		for _, removed := range []string{"Quick Scan", "Custom Scan", "Test IPs", "Discover Colos"} {

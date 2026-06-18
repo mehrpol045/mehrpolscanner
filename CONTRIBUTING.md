@@ -1,6 +1,6 @@
-# Contributing to SenPai Scanner
+# Contributing to mehrpol
 
-Thank you for taking the time to improve SenPai Scanner. This project exists so that people on slow or restricted networks can find Cloudflare IPs that **actually work with their own config** — without reading docs, memorizing flags, or babysitting a terminal.
+Thank you for taking the time to improve mehrpol. This project exists so that people on slow or restricted networks can find Cloudflare IPs that **actually work with their own config** — without reading docs, memorizing flags, or babysitting a terminal.
 
 Every contribution should move us closer to that goal.
 
@@ -17,7 +17,7 @@ These priorities are ordered on purpose. When they conflict, resolve them from t
 | **Clean code** | Small functions, honest names, minimal scope. Match the style of the file you are editing. |
 | **Performance** | Scans must stay fast on weak hardware and bad networks. Do not block the UI thread; measure before adding work per IP. |
 
-SenPai Scanner is **not** a general-purpose network lab. Resist scope creep: CLI flags, export formats, and power-user toggles only belong here when they serve the main workflow.
+mehrpol is **not** a general-purpose network lab. Resist scope creep: CLI flags, export formats, and power-user toggles only belong here when they serve the main workflow.
 
 ---
 
@@ -55,10 +55,10 @@ When in doubt, open an issue and describe the problem you are solving before wri
 **Requirements:** Go version from [`go.mod`](go.mod), Git.
 
 ```bash
-git clone https://github.com/matinsenpai/senpaiscanner.git
-cd senpaiscanner
+git clone https://github.com/matinsenpai/mehrpol.git
+cd mehrpol
 go mod download
-make build          # → ./senpaiscanner
+make build          # → ./mehrpol
 make test           # race + coverage
 make test-short     # faster, matches CI -short
 make vet
@@ -68,7 +68,7 @@ make lint           # optional locally; CI runs golangci-lint
 Run the TUI locally:
 
 ```bash
-./senpaiscanner
+./mehrpol
 # or
 make run
 ```
@@ -80,7 +80,7 @@ make run
 ## Project layout
 
 ```
-cmd/senpaiscanner/     entrypoint
+cmd/mehrpol/     entrypoint
 internal/
   ui/                  Bubble Tea TUI, pages, commands
   prober/              TCP / TLS / HTTP probes
@@ -160,7 +160,7 @@ Include as much of the following as you can:
 | Field | Example |
 |---|---|
 | OS / arch | Windows 11 amd64 |
-| Version | output of `senpaiscanner --version` |
+| Version | output of `mehrpol --version` |
 | Screen | Find Working IPs → Phase 2 results |
 | Config type | VLESS + WS + TLS (no secrets — redact UUID/password) |
 | Expected vs actual | “SPEED shows 0.0 Mbps but endpoint works in v2rayN” |
@@ -184,6 +184,6 @@ By contributing, you agree that your contributions will be licensed under the [M
 
 ## Questions
 
-Open a [GitHub Discussion](https://github.com/matinsenpai/senpaiscanner/discussions) or issue if you are unsure whether an idea fits. A quick “is this in scope?” question saves everyone time.
+Open a [GitHub Discussion](https://github.com/matinsenpai/mehrpol/discussions) or issue if you are unsure whether an idea fits. A quick “is this in scope?” question saves everyone time.
 
-Thank you for helping keep SenPai Scanner fast, simple, and reliable for the people who actually need it.
+Thank you for helping keep mehrpol fast, simple, and reliable for the people who actually need it.

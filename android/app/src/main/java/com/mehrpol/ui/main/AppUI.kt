@@ -1,4 +1,4 @@
-package com.matinsenpai.senpaiscanner.ui.main
+package com.mehrpol.ui.main
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -48,14 +49,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 import java.io.FileOutputStream
-import com.matinsenpai.senpaiscanner.BuildConfig
-import com.matinsenpai.senpaiscanner.R
-import com.matinsenpai.senpaiscanner.theme.SenPaiDarkBackground
-import com.matinsenpai.senpaiscanner.theme.SenPaiError
-import com.matinsenpai.senpaiscanner.theme.SenPaiOrange
-import com.matinsenpai.senpaiscanner.theme.SenPaiSuccess
-import com.matinsenpai.senpaiscanner.theme.SenPaiDarkSurface
-import com.matinsenpai.senpaiscanner.theme.SenPaiPrimary
+import com.mehrpol.BuildConfig
+import com.mehrpol.R
+import com.mehrpol.theme.MehrpolCyan
+import com.mehrpol.theme.MehrpolDarkSurface
+import com.mehrpol.theme.MehrpolError
+import com.mehrpol.theme.MehrpolPrimary
+import com.mehrpol.theme.MehrpolSuccess
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,7 +102,7 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = stringResource(R.string.app_name),
-                        color = SenPaiOrange,
+                        color = MehrpolCyan,
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp
                     )
@@ -111,7 +111,7 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     Icon(
                         imageVector = Icons.Filled.Info,
                         contentDescription = stringResource(R.string.title_info),
-                        tint = SenPaiOrange
+                        tint = MehrpolCyan
                     )
                 }
             }
@@ -125,8 +125,21 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     onClick = { selectedTab = 0 },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = SenPaiOrange,
-                        indicatorColor = SenPaiOrange,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray
+                    )
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Security, contentDescription = "SNI Check") },
+                    label = { Text("SNI") },
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.background,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
                         unselectedIconColor = Color.Gray,
                         unselectedTextColor = Color.Gray
                     )
@@ -134,12 +147,12 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                     label = { Text("Settings") },
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = SenPaiOrange,
-                        indicatorColor = SenPaiOrange,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
                         unselectedIconColor = Color.Gray,
                         unselectedTextColor = Color.Gray
                     )
@@ -150,7 +163,7 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
             if (selectedTab == 0) {
                 FloatingActionButton(
                     onClick = { viewModel.toggleScan() },
-                    containerColor = if (uiState.isRunning) SenPaiError else SenPaiOrange,
+                    containerColor = if (uiState.isRunning) MehrpolError else MehrpolCyan,
                     contentColor = Color.White
                 ) {
                     Text(
@@ -164,10 +177,13 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
         floatingActionButtonPosition = FabPosition.Center
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
-            if (selectedTab == 0) {
-                HomeScreen(uiState, context)
-            } else {
-                SettingsScreen(uiState.config) { newConfig ->
+            when (selectedTab) {
+                0 -> HomeScreen(uiState, context)
+                1 -> SniCheckScreen(
+                    state = uiState.sniCheck,
+                    onRunCheck = viewModel::runSniCheck
+                )
+                else -> SettingsScreen(uiState.config) { newConfig ->
                     viewModel.updateConfig(newConfig)
                 }
             }
@@ -185,8 +201,8 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
         }
         Spacer(modifier = Modifier.height(4.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            StatCard("Healthy", uiState.healthy.toString(), Modifier.weight(1f), SenPaiSuccess)
-            StatCard("Failed", uiState.failed.toString(), Modifier.weight(1f), SenPaiError)
+            StatCard("Healthy", uiState.healthy.toString(), Modifier.weight(1f), MehrpolSuccess)
+            StatCard("Failed", uiState.failed.toString(), Modifier.weight(1f), MehrpolError)
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -207,24 +223,24 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                     val phase1Ips = uiState.results.filter { !it.isPhase2 && it.isHealthy }.map { it.ip }.distinct().joinToString("\n")
                     if (phase1Ips.isNotEmpty()) {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("SenPaiScanner IPs", phase1Ips))
+                        clipboard.setPrimaryClip(ClipData.newPlainText("mehrpol IPs", phase1Ips))
                         val count = uiState.results.count { !it.isPhase2 && it.isHealthy }
                         Toast.makeText(context, "Copied $count Phase 1 IPs", Toast.LENGTH_SHORT).show()
                     }
                 },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = SenPaiOrange
+                    contentColor = MehrpolCyan
                 ),
-                border = BorderStroke(1.dp, SenPaiOrange)
+                border = BorderStroke(1.dp, MehrpolCyan)
             ) {
                 Text(
                     text = "Copy",
                     fontSize = 12.sp,
-                    color = SenPaiOrange
+                    color = MehrpolCyan
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Phase 1", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SenPaiOrange)
+                Text("Phase 1", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MehrpolCyan)
             }
             
             // Phase 2 Copy Button (only visible when Phase 2 results exist)
@@ -234,24 +250,24 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                         val phase2Ips = uiState.results.filter { it.isPhase2 && it.phase2Status }.map { it.ip }.distinct().joinToString("\n")
                         if (phase2Ips.isNotEmpty()) {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("SenPaiScanner Phase 2 IPs", phase2Ips))
+                            clipboard.setPrimaryClip(ClipData.newPlainText("mehrpol Phase 2 IPs", phase2Ips))
                             val count = uiState.results.count { it.isPhase2 && it.phase2Status }
                             Toast.makeText(context, "Copied $count Phase 2 IPs", Toast.LENGTH_SHORT).show()
                         }
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = SenPaiPrimary
+                        contentColor = MehrpolPrimary
                     ),
-                    border = BorderStroke(1.dp, SenPaiPrimary)
+                    border = BorderStroke(1.dp, MehrpolPrimary)
                 ) {
                     Text(
                         text = "Copy",
                         fontSize = 12.sp,
-                        color = SenPaiPrimary
+                        color = MehrpolPrimary
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Phase 2", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SenPaiPrimary)
+                    Text("Phase 2", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MehrpolPrimary)
                 }
             }
         }
@@ -266,12 +282,12 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                 ) {
                     Text(
                         text = "Xray Validating Candidates...",
-                        color = SenPaiPrimary,
+                        color = MehrpolPrimary,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "${uiState.tested} / ${uiState.totalPhase2}",
-                        color = SenPaiPrimary,
+                        color = MehrpolPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
@@ -280,8 +296,8 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                 LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier.fillMaxWidth().height(6.dp),
-                    color = SenPaiPrimary,
-                    trackColor = SenPaiDarkSurface,
+                    color = MehrpolPrimary,
+                    trackColor = MehrpolDarkSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -299,7 +315,7 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
             items(uiState.results) { res ->
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    colors = CardDefaults.cardColors(containerColor = SenPaiDarkSurface)
+                    colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface)
                 ) {
                     if (res.isPhase2) {
                         Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {
@@ -310,7 +326,7 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
                                         contentDescription = "Copy IP",
-                                        tint = SenPaiOrange,
+                                        tint = MehrpolCyan,
                                         modifier = Modifier
                                             .size(16.dp)
                                             .clickable {
@@ -323,7 +339,7 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                                 Icon(
                                     imageVector = if (res.phase2Status) Icons.Default.Check else Icons.Default.Close,
                                     contentDescription = if (res.phase2Status) "Passed" else "Failed",
-                                    tint = if (res.phase2Status) SenPaiSuccess else SenPaiError,
+                                    tint = if (res.phase2Status) MehrpolSuccess else MehrpolError,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -346,7 +362,7 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
                                     contentDescription = "Copy IP",
-                                    tint = SenPaiOrange,
+                                    tint = MehrpolCyan,
                                     modifier = Modifier
                                         .size(18.dp)
                                         .clickable {
@@ -357,10 +373,104 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                                 )
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("${res.latencyMs} ms", color = if (res.isHealthy) SenPaiSuccess else SenPaiError, fontWeight = FontWeight.Bold)
+                                Text("${res.latencyMs} ms", color = if (res.isHealthy) MehrpolSuccess else MehrpolError, fontWeight = FontWeight.Bold)
                                 Text("Loss: ${String.format("%.2f", res.loss)}%", fontSize = 12.sp, color = Color.Gray)
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+fun SniCheckScreen(state: SniCheckUiState, onRunCheck: (String, String, String) -> Unit) {
+    var host by remember { mutableStateOf("") }
+    var sni by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("443") }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Text("SNI Check", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
+        }
+        item {
+            OutlinedTextField(
+                value = host,
+                onValueChange = { host = it },
+                label = { Text("Host or IP") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = sni,
+                onValueChange = { sni = it },
+                label = { Text("SNI value") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = port,
+                onValueChange = { port = it.filter(Char::isDigit).take(5) },
+                label = { Text("Port") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        item {
+            Button(
+                onClick = { onRunCheck(host, sni, port) },
+                enabled = !state.isRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (state.isRunning) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.background)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Checking...")
+                } else {
+                    Text("Run SNI Check", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        state.error?.let { err ->
+            item {
+                Text(err, color = MehrpolError, fontWeight = FontWeight.Medium)
+            }
+        }
+        state.result?.let { result ->
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (result.isValid) Icons.Default.Check else Icons.Default.Close,
+                                contentDescription = if (result.isValid) "Valid" else "Blocked",
+                                tint = if (result.isValid) MehrpolSuccess else MehrpolError
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (result.isValid) "Valid" else "Blocked",
+                                color = if (result.isValid) MehrpolSuccess else MehrpolError,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        InfoValueRow("Endpoint", "${result.host}:${result.port}")
+                        InfoValueRow("SNI", result.sni)
+                        InfoValueRow("Status", result.status)
+                        InfoValueRow("Latency", "${result.latencyMs} ms")
+                        Text(result.message, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -372,7 +482,7 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
 fun StatCard(title: String, value: String, modifier: Modifier = Modifier, valueColor: Color = Color.White) {
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = SenPaiDarkSurface)
+        colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface)
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Text(title, color = Color.Gray, fontSize = 11.sp)
@@ -406,7 +516,7 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
 
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         item {
-            Text("Scanner Settings", style = MaterialTheme.typography.headlineSmall, color = SenPaiOrange, fontWeight = FontWeight.Bold)
+            Text("mehrpol Settings", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -414,16 +524,16 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
         item {
             SettingSection("Source", "") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = config.sourceType == "Random", onClick = { onConfigChanged(config.copy(sourceType = "Random")) }, colors = RadioButtonDefaults.colors(selectedColor = SenPaiOrange))
+                    RadioButton(selected = config.sourceType == "Random", onClick = { onConfigChanged(config.copy(sourceType = "Random")) }, colors = RadioButtonDefaults.colors(selectedColor = MehrpolCyan))
                     Text("Random", modifier = Modifier.clickable { onConfigChanged(config.copy(sourceType = "Random")) })
                     Spacer(modifier = Modifier.width(16.dp))
-                    RadioButton(selected = config.sourceType == "From File", onClick = { onConfigChanged(config.copy(sourceType = "From File")) }, colors = RadioButtonDefaults.colors(selectedColor = SenPaiOrange))
+                    RadioButton(selected = config.sourceType == "From File", onClick = { onConfigChanged(config.copy(sourceType = "From File")) }, colors = RadioButtonDefaults.colors(selectedColor = MehrpolCyan))
                     Text("From File", modifier = Modifier.clickable { onConfigChanged(config.copy(sourceType = "From File")) })
                 }
                 if (config.sourceType == "From File") {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { filePickerLauncher.launch("text/plain") }, colors = ButtonDefaults.buttonColors(containerColor = SenPaiDarkSurface)) {
-                        Text(if (config.sourceFile.isNotEmpty()) "File Selected" else "Import .txt File", color = SenPaiOrange)
+                    Button(onClick = { filePickerLauncher.launch("text/plain") }, colors = ButtonDefaults.buttonColors(containerColor = MehrpolDarkSurface)) {
+                        Text(if (config.sourceFile.isNotEmpty()) "File Selected" else "Import .txt File", color = MehrpolCyan)
                     }
                 }
             }
@@ -484,7 +594,7 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
                                         RadioButton(
                                             selected = config.portType == "Config",
                                             onClick = { onConfigChanged(config.copy(portType = "Config")) },
-                                            colors = RadioButtonDefaults.colors(selectedColor = SenPaiOrange)
+                                            colors = RadioButtonDefaults.colors(selectedColor = MehrpolCyan)
                                         )
                                         Text("Config", modifier = Modifier.clickable { onConfigChanged(config.copy(portType = "Config")) })
                                     } else {
@@ -495,7 +605,7 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
                                                 if (checked) newSet.add(opt.toInt()) else newSet.remove(opt.toInt())
                                                 onConfigChanged(config.copy(portType = "CustomPorts", selectedPorts = newSet, configUrl = ""))
                                             },
-                                            colors = CheckboxDefaults.colors(checkedColor = SenPaiOrange)
+                                            colors = CheckboxDefaults.colors(checkedColor = MehrpolCyan)
                                         )
                                         Text(opt)
                                     }
@@ -611,7 +721,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = SenPaiDarkSurface),
+            colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -629,7 +739,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
                         text = stringResource(R.string.info_app_name_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = SenPaiOrange
+                        color = MehrpolCyan
                     )
                     TextButton(onClick = onDismiss) {
                         Text("X", color = Color.Gray, fontWeight = FontWeight.Bold)
@@ -638,7 +748,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
 
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = SenPaiDarkSurface)
+                    colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface)
                 ) {
                     Box(
                         modifier = Modifier
@@ -646,8 +756,8 @@ fun InfoDialog(onDismiss: () -> Unit) {
                             .background(
                                 brush = Brush.linearGradient(
                                     colors = listOf(
-                                        SenPaiOrange.copy(alpha = 0.15f),
-                                        SenPaiOrange.copy(alpha = 0.05f)
+                                        MehrpolCyan.copy(alpha = 0.15f),
+                                        MehrpolCyan.copy(alpha = 0.05f)
                                     )
                                 )
                             )
@@ -751,7 +861,7 @@ private fun InfoLinkRow(title: String, link: String, onOpen: () -> Unit) {
             Text(
                 text = link,
                 style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),
-                color = SenPaiOrange,
+                color = MehrpolCyan,
                 maxLines = 2
             )
         }
@@ -759,7 +869,7 @@ private fun InfoLinkRow(title: String, link: String, onOpen: () -> Unit) {
         Icon(
             imageVector = Icons.Filled.ExitToApp,
             contentDescription = stringResource(R.string.info_open_link),
-            tint = SenPaiOrange
+            tint = MehrpolCyan
         )
     }
 }

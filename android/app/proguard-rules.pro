@@ -3,5 +3,5 @@
 # in /usr/local/Cellar/android-sdk/24.3.3/tools/proguard/proguard-android.txt
 
 # Keep Go mobile bindings
--keep class com.matinsenpai.senpaiscanner.Mobile { *; }
--keep class com.matinsenpai.senpaiscanner.Callback { *; }
+-keep class com.mehrpol.Mobile { *; }
+-keep class com.mehrpol.Callback { *; }

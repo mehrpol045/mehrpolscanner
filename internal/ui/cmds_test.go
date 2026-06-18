@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matinsenpai/senpaiscanner/internal/prober"
-	"github.com/matinsenpai/senpaiscanner/internal/result"
+	"github.com/matinsenpai/mehrpol/internal/prober"
+	"github.com/matinsenpai/mehrpol/internal/result"
 )
 
 func TestConfigProbeFromURLUsesConfigPortSNIAndWebSocket(t *testing.T) {

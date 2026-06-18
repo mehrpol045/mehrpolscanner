@@ -6,14 +6,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/matinsenpai/senpaiscanner/internal/ui"
-	"github.com/matinsenpai/senpaiscanner/pkg/version"
+	"github.com/matinsenpai/mehrpol/internal/ui"
+	"github.com/matinsenpai/mehrpol/pkg/version"
 )
 
 func main() {
 	// --version flag without launching TUI
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version") {
-		fmt.Println("SenPai Scanner", version.String())
+		fmt.Println("mehrpol", version.String())
 		return
 	}
 

@@ -1,6 +1,6 @@
-BINARY     := senpaiscanner
-MODULE     := github.com/matinsenpai/senpaiscanner
-CMD        := ./cmd/senpaiscanner
+BINARY     := mehrpol
+MODULE     := github.com/matinsenpai/mehrpol
+CMD        := ./cmd/mehrpol
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")

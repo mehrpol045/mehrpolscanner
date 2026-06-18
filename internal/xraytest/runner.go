@@ -47,17 +47,17 @@ func nextPort() int {
 
 // ValidationResult holds the outcome of testing a VLESS config through xray.
 type ValidationResult struct {
-	IP              string
-	Port            int
-	Success         bool
-	Latency         time.Duration // time to first byte
-	Throughput      float64       // bytes/sec for download test
-	BytesRecv       int64
-	UploadThroughput float64      // bytes/sec for upload test (0 if not tested)
+	IP               string
+	Port             int
+	Success          bool
+	Latency          time.Duration // time to first byte
+	Throughput       float64       // bytes/sec for download test
+	BytesRecv        int64
+	UploadThroughput float64 // bytes/sec for upload test (0 if not tested)
 	UploadBytesSent  int64
-	Error           string
-	Transport       string // ws, grpc, xhttp
-	Retries         int    // how many attempts were needed
+	Error            string
+	Transport        string // ws, grpc, xhttp
+	Retries          int    // how many attempts were needed
 }
 
 // ValidateConfig starts an xray instance with the given config, sends test
@@ -308,7 +308,7 @@ func proxyRelaxedEndpointCheck(ctx context.Context, proxyAddr, targetURL, author
 	if err != nil {
 		return false, 0, err
 	}
-	req.Header.Set("User-Agent", "senpaiscanner/1.0")
+	req.Header.Set("User-Agent", "mehrpol/1.0")
 	if authority != "" {
 		req.Host = authority
 	}
@@ -459,7 +459,7 @@ func proxyConnectivityCheckTarget(ctx context.Context, proxyAddr, target, author
 	if err != nil {
 		return false, 0, err
 	}
-	req.Header.Set("User-Agent", "senpaiscanner/1.0")
+	req.Header.Set("User-Agent", "mehrpol/1.0")
 	if authority != "" {
 		req.Host = authority
 	}
@@ -611,7 +611,7 @@ func uploadThroughProxy(ctx context.Context, proxyAddr, uploadURL string, maxByt
 	}
 	req.ContentLength = maxBytes
 	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("User-Agent", "senpaiscanner/1.0")
+	req.Header.Set("User-Agent", "mehrpol/1.0")
 	if authority != "" {
 		req.Host = authority
 	}
@@ -829,7 +829,7 @@ func downloadThroughProxy(ctx context.Context, proxyAddr, dlURL string, maxBytes
 	if err != nil {
 		return 0, 0, err
 	}
-	req.Header.Set("User-Agent", "senpaiscanner/1.0")
+	req.Header.Set("User-Agent", "mehrpol/1.0")
 	if authority != "" {
 		req.Host = authority
 	}

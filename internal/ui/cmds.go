@@ -3,6 +3,7 @@ package ui
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -20,12 +21,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/matinsenpai/senpaiscanner/internal/engine"
-	"github.com/matinsenpai/senpaiscanner/internal/ipsrc"
-	"github.com/matinsenpai/senpaiscanner/internal/output"
-	"github.com/matinsenpai/senpaiscanner/internal/prober"
-	"github.com/matinsenpai/senpaiscanner/internal/result"
-	"github.com/matinsenpai/senpaiscanner/internal/xraytest"
+	"github.com/matinsenpai/mehrpol/internal/engine"
+	"github.com/matinsenpai/mehrpol/internal/ipsrc"
+	"github.com/matinsenpai/mehrpol/internal/output"
+	"github.com/matinsenpai/mehrpol/internal/prober"
+	"github.com/matinsenpai/mehrpol/internal/result"
+	"github.com/matinsenpai/mehrpol/internal/scanmeta"
+	"github.com/matinsenpai/mehrpol/internal/xraytest"
 )
 
 // scanCancel holds the cancel function for the active scan so the TUI can
@@ -34,6 +36,44 @@ var scanCancel context.CancelFunc
 var scanIDCounter atomic.Int64
 
 func nextScanID() int64 { return scanIDCounter.Add(1) }
+
+type SniCheckResult struct {
+	Host    string
+	SNI     string
+	Port    int
+	Status  string
+	Latency time.Duration
+	Valid   bool
+	Message string
+}
+
+type SniCheckDoneMsg struct{ Result SniCheckResult }
+
+func StartSniCheckCmd(host, sni string, port int) tea.Cmd {
+	return func() tea.Msg {
+		return SniCheckDoneMsg{Result: runSniCheck(host, sni, port)}
+	}
+}
+
+func runSniCheck(host, sni string, port int) SniCheckResult {
+	started := time.Now()
+	address := net.JoinHostPort(host, strconv.Itoa(port))
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 7 * time.Second}, "tcp", address, &tls.Config{ServerName: sni})
+	latency := time.Since(started)
+	if err != nil {
+		return SniCheckResult{Host: host, SNI: sni, Port: port, Status: "Connection failed", Latency: latency, Valid: false, Message: fmt.Sprintf("SNI is blocked or unavailable: %v", err)}
+	}
+	defer conn.Close()
+
+	_ = conn.SetDeadline(time.Now().Add(7 * time.Second))
+	_, _ = fmt.Fprintf(conn, "HEAD / HTTP/1.1\r\nHost: %s\r\nUser-Agent: mehrpol/1.0\r\nConnection: close\r\n\r\n", sni)
+	status, err := bufio.NewReader(conn).ReadString('\n')
+	status = strings.TrimSpace(status)
+	if err != nil || !strings.HasPrefix(status, "HTTP/") {
+		status = "TLS handshake succeeded"
+	}
+	return SniCheckResult{Host: host, SNI: sni, Port: port, Status: status, Latency: latency, Valid: true, Message: "SNI is valid"}
+}
 
 // StartScanCmd builds a tea.Cmd that runs the scan engine in the background,
 // sending ResultMsg and StatsMsg messages to the Bubble Tea program.
@@ -292,6 +332,14 @@ func runConfigPhase1(opts configPhase1Options) {
 		}
 	}
 	probeCfg.RequireWebSocket = opts.requireWS
+	if rawSNIs := strings.TrimSpace(os.Getenv("MEHRPOL_SNIS")); rawSNIs != "" {
+		for _, sni := range strings.Split(rawSNIs, ",") {
+			if sni = strings.TrimSpace(sni); sni != "" {
+				probeCfg.SNIs = append(probeCfg.SNIs, sni)
+			}
+		}
+	}
+	probeCfg.AutoDetectSNI = envBool("MEHRPOL_AUTO_SNI")
 	ports := opts.ports
 	if len(ports) == 0 {
 		ports = []int{probeCfg.Port}
@@ -301,7 +349,15 @@ func runConfigPhase1(opts configPhase1Options) {
 	scanCancel = cancel
 	defer cancel()
 
+	blocked := scanmeta.LoadDefaultBlockList()
+	countryFilter := os.Getenv("MEHRPOL_COUNTRY_FILTER")
+	asnFilter := os.Getenv("MEHRPOL_ASN_FILTER")
+
 	callback := func(r *result.Result) {
+		scanmeta.Enrich(r, blocked)
+		if !scanmeta.PassesFilters(r, countryFilter, asnFilter) {
+			return
+		}
 		if liveResultWriter != nil {
 			liveResultWriter.AddPhase1(r)
 		}
@@ -562,6 +618,15 @@ func buildColoSet(raw string) map[string]bool {
 		}
 	}
 	return set
+}
+
+func envBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func passesColoFilter(r *result.Result, set map[string]bool) bool {

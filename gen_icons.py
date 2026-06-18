@@ -24,7 +24,7 @@ def generate_icons(project_dir):
         print(f"File not found: {foreground_raw_path}")
         return
 
-    # Background color is #F6821F
+    # Background color is #00BCD4
     bg_color = (246, 130, 31, 255)
     
     # Load foreground and crop transparency
@@ -85,4 +85,4 @@ def generate_icons(project_dir):
     print(f"Generated icons for {project_dir}")
 
 if __name__ == '__main__':
-    generate_icons(r'C:\Users\user\Desktop\app\goose\New folder\SenPaiScanner-main')
+    generate_icons(r'C:\Users\user\Desktop\app\goose\New folder\mehrpol-main')

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matinsenpai/senpaiscanner/internal/result"
+	"github.com/matinsenpai/mehrpol/internal/result"
 )
 
 // sniHostnames is a list of well-known Cloudflare hostnames used as SNI values.
@@ -31,7 +31,9 @@ type Config struct {
 	Mode               Mode
 	Tries              int
 	Timeout            time.Duration
-	SNI                string // empty = rotate automatically
+	SNI                string   // empty = rotate automatically
+	SNIs               []string // optional candidates for best-SNI detection
+	AutoDetectSNI      bool
 	SpeedBytes         int64  // optional HTTP download sample size; 0 disables it
 	InsecureSkipVerify bool   // skip TLS cert verification (use for Phase 1 where Phase 2 validates properly)
 	WebSocketHost      string // empty = SNI
@@ -92,32 +94,30 @@ func Probe(ctx context.Context, ip net.IP, cfg Config) *result.Result {
 	if cfg.Mode == ModeHTTP && cfg.SpeedBytes > 0 {
 		r.SpeedTested = true
 	}
+	sniCandidates := resolveSNICandidates(cfg)
+	r.TestedSNIs = append([]string(nil), sniCandidates...)
 
 	for i := 0; i < cfg.Tries; i++ {
 		if ctx.Err() != nil {
 			break
 		}
-		sni := cfg.SNI
-		if sni == "" && cfg.Mode == ModeHTTP {
-			sni = "speed.cloudflare.com"
-		} else if sni == "" {
-			sni = sniHostnames[rand.Intn(len(sniHostnames))]
-		}
+		sni := sniCandidates[i%len(sniCandidates)]
 
 		var lat time.Duration
 		var tlsOk bool
 		var httpStatus int
 		var colo string
 		var throughput float64
+		var certInfo result.CertInfo
 
 		switch cfg.Mode {
 		case ModeTCP:
 			lat = probeTCP(ctx, ip, cfg.Port, cfg.Timeout)
 		case ModeTLS:
-			lat, tlsOk = probeTLS(ctx, ip, cfg.Port, sni, cfg.Timeout, cfg.InsecureSkipVerify)
+			lat, tlsOk, certInfo = probeTLS(ctx, ip, cfg.Port, sni, cfg.Timeout, cfg.InsecureSkipVerify)
 		case ModeHTTP:
 			var wsOk bool
-			lat, tlsOk, httpStatus, colo, throughput, wsOk = probeHTTP(ctx, ip, cfg.Port, sni, cfg.Timeout, cfg.SpeedBytes, cfg.InsecureSkipVerify, cfg.WebSocketHost, cfg.WebSocketPath, cfg.RequireWebSocket)
+			lat, tlsOk, httpStatus, colo, throughput, wsOk, certInfo, sni = probeHTTP(ctx, ip, cfg.Port, sni, cfg.Timeout, cfg.SpeedBytes, cfg.InsecureSkipVerify, cfg.WebSocketHost, cfg.WebSocketPath, cfg.RequireWebSocket)
 			if wsOk {
 				r.WSOk = true
 			}
@@ -126,6 +126,14 @@ func Probe(ctx context.Context, ip net.IP, cfg Config) *result.Result {
 		r.Latencies[i] = lat
 		if tlsOk {
 			r.TLSOk = true
+			r.SNI = sni
+			r.BestSNI = sni
+		}
+		if !certInfo.Expiry.IsZero() || certInfo.CN != "" || certInfo.Issuer != "" {
+			r.CertCN = certInfo.CN
+			r.CertIssuer = certInfo.Issuer
+			r.CertExpiry = certInfo.Expiry
+			r.CertDNSNames = append([]string(nil), certInfo.DNSNames...)
 		}
 		if httpStatus != 0 {
 			r.HTTPStatus = httpStatus
@@ -179,7 +187,39 @@ func probeTCP(ctx context.Context, ip net.IP, port int, timeout time.Duration) t
 }
 
 // probeTLS measures a TLS handshake time.
-func probeTLS(ctx context.Context, ip net.IP, port int, sni string, timeout time.Duration, insecure bool) (time.Duration, bool) {
+func resolveSNICandidates(cfg Config) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return
+		}
+		if _, ok := seen[s]; ok {
+			return
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	add(cfg.SNI)
+	for _, s := range cfg.SNIs {
+		add(s)
+	}
+	if cfg.AutoDetectSNI || len(out) == 0 {
+		if cfg.Mode == ModeHTTP {
+			add("speed.cloudflare.com")
+		}
+		for _, s := range sniHostnames {
+			add(s)
+		}
+	}
+	if len(out) == 0 {
+		out = []string{"speed.cloudflare.com"}
+	}
+	return out
+}
+
+func probeTLS(ctx context.Context, ip net.IP, port int, sni string, timeout time.Duration, insecure bool) (time.Duration, bool, result.CertInfo) {
 	addr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
 	dl := time.Now().Add(timeout)
 	dialCtx, cancel := context.WithDeadline(ctx, dl)
@@ -197,11 +237,28 @@ func probeTLS(ctx context.Context, ip net.IP, port int, sni string, timeout time
 	start := time.Now()
 	conn, err := d.DialContext(dialCtx, "tcp", addr)
 	if err != nil {
-		return 0, false
+		return 0, false, result.CertInfo{}
 	}
 	lat := time.Since(start)
+	info := result.CertInfo{}
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		info = certInfoFromState(tlsConn.ConnectionState())
+	}
 	conn.Close()
-	return lat, true
+	return lat, true, info
+}
+
+func certInfoFromState(st tls.ConnectionState) result.CertInfo {
+	if len(st.PeerCertificates) == 0 {
+		return result.CertInfo{}
+	}
+	cert := st.PeerCertificates[0]
+	return result.CertInfo{
+		CN:       cert.Subject.CommonName,
+		Issuer:   cert.Issuer.CommonName,
+		Expiry:   cert.NotAfter,
+		DNSNames: append([]string(nil), cert.DNSNames...),
+	}
 }
 
 // phase1TraceSNIs are fallback SNI hostnames for /cdn-cgi/trace when the
@@ -236,18 +293,20 @@ func traceHostsForProbe(primary string) []string {
 // probeHTTP fetches /cdn-cgi/trace to confirm the IP is a real Cloudflare edge
 // and to determine the colo identifier.
 func probeHTTP(ctx context.Context, ip net.IP, port int, sni string, timeout time.Duration, speedBytes int64, insecure bool, wsHost, wsPath string, requireWS bool) (
-	lat time.Duration, tlsOk bool, httpStatus int, colo string, throughput float64, wsOk bool,
+	lat time.Duration, tlsOk bool, httpStatus int, colo string, throughput float64, wsOk bool, certInfo result.CertInfo, usedSNI string,
 ) {
+	usedSNI = sni
 	traceSNI := sni
 	for _, host := range traceHostsForProbe(sni) {
-		lat, tlsOk, httpStatus, colo = probeTrace(ctx, ip, port, host, timeout, insecure)
+		lat, tlsOk, httpStatus, colo, certInfo = probeTrace(ctx, ip, port, host, timeout, insecure)
 		if httpStatus >= 200 && httpStatus < 400 && colo != "" {
 			traceSNI = host
+			usedSNI = host
 			break
 		}
 	}
 	if httpStatus < 200 || httpStatus >= 400 || colo == "" {
-		return lat, tlsOk, httpStatus, colo, 0, false
+		return lat, tlsOk, httpStatus, colo, 0, false, certInfo, usedSNI
 	}
 
 	if speedBytes > 0 {
@@ -262,7 +321,7 @@ func probeHTTP(ctx context.Context, ip net.IP, port int, sni string, timeout tim
 // probeTrace performs a single /cdn-cgi/trace GET against ip while using host
 // as the TLS SNI and HTTP authority.
 func probeTrace(ctx context.Context, ip net.IP, port int, host string, timeout time.Duration, insecure bool) (
-	lat time.Duration, tlsOk bool, httpStatus int, colo string,
+	lat time.Duration, tlsOk bool, httpStatus int, colo string, certInfo result.CertInfo,
 ) {
 	addr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
 
@@ -301,18 +360,21 @@ func probeTrace(ctx context.Context, ip net.IP, port int, host string, timeout t
 	if err != nil {
 		return
 	}
-	req.Header.Set("User-Agent", "senpaiscanner/1.0")
+	req.Header.Set("User-Agent", "mehrpol/1.0")
 	req.Host = host
 
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, false, 0, ""
+		return 0, false, 0, "", result.CertInfo{}
 	}
 	lat = time.Since(start)
 	defer resp.Body.Close()
 
 	tlsOk = resp.TLS != nil
+	if resp.TLS != nil {
+		certInfo = certInfoFromState(*resp.TLS)
+	}
 	httpStatus = resp.StatusCode
 	colo = parseColoRay(resp.Header.Get("CF-Ray"))
 
@@ -496,7 +558,7 @@ func probeStability(ctx context.Context, ip net.IP, port int, sni string, timeou
 		}
 	}
 	if idleHold < 500*time.Millisecond {
-		idleHold = 500*time.Millisecond
+		idleHold = 500 * time.Millisecond
 	}
 	if idleHold < 500*time.Millisecond {
 		idleHold = 500 * time.Millisecond
@@ -551,7 +613,7 @@ func probeDownload(ctx context.Context, ip net.IP, port int, timeout time.Durati
 	if err != nil {
 		return 0
 	}
-	req.Header.Set("User-Agent", "senpaiscanner/1.0")
+	req.Header.Set("User-Agent", "mehrpol/1.0")
 
 	start := time.Now()
 	resp, err := client.Do(req)

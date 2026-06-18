@@ -18,10 +18,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/matinsenpai/senpaiscanner/internal/banner"
-	"github.com/matinsenpai/senpaiscanner/internal/config"
-	"github.com/matinsenpai/senpaiscanner/internal/result"
-	"github.com/matinsenpai/senpaiscanner/internal/xraytest"
+	"github.com/matinsenpai/mehrpol/internal/banner"
+	"github.com/matinsenpai/mehrpol/internal/config"
+	"github.com/matinsenpai/mehrpol/internal/result"
+	"github.com/matinsenpai/mehrpol/internal/xraytest"
 )
 
 // ---------------------------------------------------------------------------
@@ -62,11 +62,11 @@ type tickMsg time.Time
 var (
 	styleBorder = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#F6821F"))
+			BorderForeground(lipgloss.Color("#00BCD4"))
 
 	styleTitle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#F6821F"))
+			Foreground(lipgloss.Color("#00BCD4"))
 
 	styleSelected = lipgloss.NewStyle().
 			Bold(true).
@@ -89,7 +89,7 @@ var (
 			Foreground(lipgloss.Color("#E74C3C"))
 
 	styleAccent = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F6821F")).Bold(true)
+			Foreground(lipgloss.Color("#00BCD4")).Bold(true)
 
 	styleHint = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#444466")).Italic(true)
@@ -260,6 +260,17 @@ type AppModel struct {
 	configUploadTest      bool
 	ispInfo               string
 
+	// SNI check
+	sniInputs   []textinput.Model
+	sniFocus    int
+	sniChecking bool
+	sniResult   *SniCheckResult
+
+	// schedule
+	scheduleEnabled bool
+	scheduleEvery   time.Duration
+	nextAutoScan    time.Time
+
 	// shared
 	statusMsg string
 	version   string
@@ -273,6 +284,7 @@ type menuEntry struct {
 var menuEntries = []menuEntry{
 	{"Find Working IPs", "scan Cloudflare IPs — config optional"},
 	{"Retry Last Scan", "retry last scan with previous configuration"},
+	{"SNI Check", "test TLS SNI reachability"},
 	{"About", ""},
 	{"Quit", ""},
 }
@@ -282,8 +294,9 @@ const menuLabelWidth = 16
 const (
 	menuFindWorking = 0
 	menuRetryLast   = 1
-	menuAbout       = 2
-	menuQuit        = 3
+	menuSniCheck    = 2
+	menuAbout       = 3
+	menuQuit        = 4
 )
 
 var modes = []string{"tls", "tcp", "http"}
@@ -325,9 +338,9 @@ func getConfigFilePath() string {
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
-		return "senpaiscanner-config.json"
+		return "mehrpol-config.json"
 	}
-	appDir := filepath.Join(dir, "senpaiscanner")
+	appDir := filepath.Join(dir, "mehrpol")
 	_ = os.MkdirAll(appDir, 0755)
 	return filepath.Join(appDir, "config.json")
 }
@@ -412,7 +425,7 @@ func (m *AppModel) applySavedConfig(cfg SavedConfig) {
 func NewApp(version string) AppModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
-	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#F6821F"))
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00BCD4"))
 
 	customInput := textinput.New()
 	customInput.Placeholder = "e.g. 50000"
@@ -449,12 +462,19 @@ func NewApp(version string) AppModel {
 	cfgCustom.Width = 12
 	m.configCustomInput = cfgCustom
 
+	if every, err := time.ParseDuration(strings.TrimSpace(os.Getenv("MEHRPOL_AUTOSCAN_EVERY"))); err == nil && every > 0 {
+		m.scheduleEnabled = true
+		m.scheduleEvery = every
+		m.nextAutoScan = time.Now().Add(every)
+	}
+
 	// Load configuration from file
 	appCfg := loadAppConfig()
 	m.applySavedConfig(appCfg.LastConfig)
 
 	m.modeIdx = modeIndex(m.scanCfg.Mode)
 	m.buildFormInputs()
+	m.buildSniInputs()
 	return m
 }
 
@@ -496,6 +516,32 @@ func (m *AppModel) buildFormInputs() {
 	m.formFocus = 0
 }
 
+func (m *AppModel) buildSniInputs() {
+	fields := []struct{ placeholder, value string }{
+		{"host or IP", ""},
+		{"SNI value", ""},
+		{"port", "443"},
+	}
+	inputs := make([]textinput.Model, len(fields))
+	for i, f := range fields {
+		ti := textinput.New()
+		ti.Placeholder = f.placeholder
+		ti.SetValue(f.value)
+		ti.CharLimit = 255
+		ti.Width = 54
+		if i == 2 {
+			ti.CharLimit = 5
+			ti.Width = 10
+		}
+		if i == 0 {
+			ti.Focus()
+		}
+		inputs[i] = ti
+	}
+	m.sniInputs = inputs
+	m.sniFocus = 0
+}
+
 // ---------------------------------------------------------------------------
 // tea.Model interface
 // ---------------------------------------------------------------------------
@@ -530,6 +576,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.bannerFrame++
+		if m.scheduleEnabled && !m.configScanning && !m.configDone && m.page == PageHome && !m.nextAutoScan.IsZero() && time.Now().After(m.nextAutoScan) {
+			m.nextAutoScan = time.Now().Add(m.scheduleEvery)
+			appCfg := loadAppConfig()
+			m.applySavedConfig(appCfg.LastConfig)
+			var cmd tea.Cmd
+			m, cmd = m.launchPhase1FromOptional()
+			return m, tea.Batch(tick(), cmd)
+		}
 		return m, tick()
 
 	case spinner.TickMsg:
@@ -573,6 +627,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case SniCheckDoneMsg:
+		m.sniChecking = false
+		res := msg.Result
+		m.sniResult = &res
+		return m, nil
+
 	case ConfigProgressMsg:
 		m.configResults = append(m.configResults, msg.Result)
 		m.configTotal = msg.Total
@@ -581,6 +641,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ConfigDoneMsg:
 		m.configScanning = false
 		m.configDone = true
+		cmp := compareWithPreviousScan(m.configPhase1Results)
+		path, err := saveScanHistory(m.configPhase1Results, m.configResults)
+		if err == nil {
+			m.statusMsg = summarizeComparison(cmp)
+			if path != "" {
+				m.statusMsg += " → " + path
+			}
+			_ = sendTelegramSummary(telegramScanSummary(path, summarizeComparison(cmp), countHealthyPhase1(m.configPhase1Results), m.configSuccessCount()))
+		}
 		return m, nil
 
 	case ConfigPhase1ResultMsg:
@@ -716,12 +785,65 @@ func (m AppModel) selectMenuItem() (tea.Model, tea.Cmd) {
 		appCfg := loadAppConfig()
 		m.applySavedConfig(appCfg.LastConfig)
 		return m.launchPhase1FromOptional()
+	case menuSniCheck:
+		m.page = PageSniCheck
+		m.statusMsg = ""
+		if len(m.sniInputs) > 0 {
+			for i := range m.sniInputs {
+				m.sniInputs[i].Blur()
+			}
+			m.sniFocus = 0
+			m.sniInputs[0].Focus()
+		}
 	case menuAbout:
 		m.page = PageAbout
 	case menuQuit:
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+func (m AppModel) handleSniCheckKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc", "q":
+		if !m.sniChecking {
+			m.page = PageHome
+		}
+		return m, nil
+	case "tab", "down":
+		if len(m.sniInputs) > 0 {
+			m.sniInputs[m.sniFocus].Blur()
+			m.sniFocus = (m.sniFocus + 1) % len(m.sniInputs)
+			m.sniInputs[m.sniFocus].Focus()
+		}
+		return m, nil
+	case "shift+tab", "up":
+		if len(m.sniInputs) > 0 {
+			m.sniInputs[m.sniFocus].Blur()
+			m.sniFocus = (m.sniFocus - 1 + len(m.sniInputs)) % len(m.sniInputs)
+			m.sniInputs[m.sniFocus].Focus()
+		}
+		return m, nil
+	case "enter":
+		host := strings.TrimSpace(m.sniInputs[0].Value())
+		sni := strings.TrimSpace(m.sniInputs[1].Value())
+		port, err := strconv.Atoi(strings.TrimSpace(m.sniInputs[2].Value()))
+		if host == "" || sni == "" {
+			m.statusMsg = "Host and SNI are required"
+			return m, nil
+		}
+		if err != nil || port < 1 || port > 65535 {
+			m.statusMsg = "Port must be between 1 and 65535"
+			return m, nil
+		}
+		m.statusMsg = ""
+		m.sniChecking = true
+		m.sniResult = nil
+		return m, StartSniCheckCmd(host, sni, port)
+	}
+	return m.updateFormInputs(msg)
 }
 
 func (m AppModel) handleQuickCountKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1213,6 +1335,12 @@ func (m AppModel) updateFormInputs(msg tea.Msg) (AppModel, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
+	if m.page == PageSniCheck && len(m.sniInputs) > 0 {
+		var cmd tea.Cmd
+		m.sniInputs[m.sniFocus], cmd = m.sniInputs[m.sniFocus].Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
 	if m.page == PageScanConfig && len(m.formInputs) > 0 {
 		for i := range m.formInputs {
 			var cmd tea.Cmd
@@ -1266,6 +1394,10 @@ func (m AppModel) View() string {
 		return m.viewResults()
 	case PageLiveColos:
 		return m.viewLiveColos()
+	case PageSniCheck:
+		return m.viewSniCheck()
+	case PageHistory:
+		return m.viewHistory()
 	case PageAbout:
 		return m.viewAbout()
 	case PageScanWithConfig:
@@ -1299,7 +1431,12 @@ func (m AppModel) viewHome() string {
 	sb.WriteString(styleDim.Render(fmt.Sprintf("  %s", ver)))
 	sb.WriteRune('\n')
 	sb.WriteString(styleDim.Render(fmt.Sprintf("  config: %s", getConfigFilePath())))
-	sb.WriteString("\n\n")
+	sb.WriteRune('\n')
+	if m.scheduleEnabled {
+		sb.WriteString(styleDim.Render(fmt.Sprintf("  auto-scan: every %s, next %s", m.scheduleEvery, m.nextAutoScan.Format("15:04:05"))))
+		sb.WriteRune('\n')
+	}
+	sb.WriteString("\n")
 
 	// ISP info — prominent display
 	if m.ispInfo != "" {
@@ -1681,6 +1818,71 @@ func (m AppModel) viewLiveColos() string {
 }
 
 // ---------------------------------------------------------------------------
+// History page
+// ---------------------------------------------------------------------------
+
+func (m AppModel) viewHistory() string {
+	var sb strings.Builder
+	sb.WriteString(styleTitle.Render("\n  Scan History\n"))
+	sb.WriteString(fmt.Sprintf("%s\n\n", styleSep.Render("  "+strings.Repeat("─", minInt(m.width-4, 70)))))
+	for _, line := range historySummaryLines(20) {
+		sb.WriteString("  " + line + "\n")
+	}
+	sb.WriteString("\n")
+	sb.WriteString(styleHint.Render("  enter/q/esc back"))
+	sb.WriteRune('\n')
+	return sb.String()
+}
+
+// ---------------------------------------------------------------------------
+// SNI Check page
+// ---------------------------------------------------------------------------
+
+func (m AppModel) viewSniCheck() string {
+	var sb strings.Builder
+	sb.WriteString(styleTitle.Render("\n  SNI Check\n"))
+	sb.WriteString(fmt.Sprintf("%s\n\n", styleSep.Render("  "+strings.Repeat("─", 56))))
+
+	labels := []string{"Host/IP", "SNI", "Port"}
+	for i, inp := range m.sniInputs {
+		labelStyle := styleDim
+		if i == m.sniFocus {
+			labelStyle = styleAccent
+		}
+		sb.WriteString(fmt.Sprintf("  %s  %s\n", labelStyle.Render(fmt.Sprintf("%-7s", labels[i])), inp.View()))
+	}
+
+	sb.WriteRune('\n')
+	if m.sniChecking {
+		sb.WriteString(fmt.Sprintf("  %s checking TLS handshake...\n", m.spinner.View()))
+	} else {
+		sb.WriteString(styleHint.Render("  enter run check   tab switch field   q/esc back"))
+		sb.WriteRune('\n')
+	}
+	if m.statusMsg != "" {
+		sb.WriteString("\n")
+		sb.WriteString(styleWarn.Render("  " + m.statusMsg))
+		sb.WriteRune('\n')
+	}
+	if m.sniResult != nil {
+		res := m.sniResult
+		sb.WriteRune('\n')
+		if res.Valid {
+			sb.WriteString(styleGood.Render("  Valid\n"))
+		} else {
+			sb.WriteString(styleBad.Render("  Blocked\n"))
+		}
+		sb.WriteString(fmt.Sprintf("  Endpoint: %s:%d\n", res.Host, res.Port))
+		sb.WriteString(fmt.Sprintf("  SNI:      %s\n", res.SNI))
+		sb.WriteString(fmt.Sprintf("  Status:   %s\n", res.Status))
+		sb.WriteString(fmt.Sprintf("  Latency:  %d ms\n", res.Latency.Milliseconds()))
+		sb.WriteString(styleDim.Render("  " + res.Message))
+		sb.WriteRune('\n')
+	}
+	return sb.String()
+}
+
+// ---------------------------------------------------------------------------
 // About page
 // ---------------------------------------------------------------------------
 
@@ -1688,10 +1890,10 @@ func (m AppModel) viewAbout() string {
 	var sb strings.Builder
 	sb.WriteString(banner.Render(m.bannerFrame / 2))
 	sb.WriteRune('\n')
-	sb.WriteString(styleTitle.Render("  SenPai Scanner\n"))
+	sb.WriteString(styleTitle.Render("  mehrpol\n"))
 	sb.WriteString(styleDim.Render(fmt.Sprintf("  version %s", m.version)))
 	sb.WriteString("\n\n")
-	sb.WriteString(styleNormal.Render("  A Cloudflare IP scanner built for high-latency, restricted networks."))
+	sb.WriteString(styleNormal.Render("  A Cloudflare connectivity toolkit for high-latency, restricted networks."))
 	sb.WriteRune('\n')
 
 	sb.WriteString(styleNormal.Render("  Probes Cloudflare's edge nodes via TCP/TLS/HTTP, measures loss,"))
@@ -1700,7 +1902,7 @@ func (m AppModel) viewAbout() string {
 	sb.WriteString(styleNormal.Render("  jitter, and identifies the colo (PoP) behind each IP."))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(styleDim.Render("  github.com/matinsenpai/senpaiscanner"))
+	sb.WriteString(styleDim.Render("  github.com/matinsenpai/mehrpol"))
 	sb.WriteString("\n\n")
 	sb.WriteString(styleHint.Render("  enter/q → back"))
 	return sb.String()
@@ -2089,12 +2291,16 @@ func (m AppModel) viewScanWithConfig() string {
 		progBar,
 	))
 	if !m.configDone {
-		sb.WriteString(fmt.Sprintf("  %s  xray validating candidates (%d workers)  %s\n\n",
+		sb.WriteString(fmt.Sprintf("  %s  xray validating candidates (%d workers)  %s\n",
 			styleAccent.Render(scanPulse(m.bannerFrame)),
 			phase2WorkersCount,
 			scanWave(m.bannerFrame+5, 32),
 		))
 	}
+	if chart := speedSparkline(m.configResults); chart != "" {
+		sb.WriteString(styleAccent.Render("  speed ") + styleGood.Render(chart) + "\n")
+	}
+	sb.WriteRune('\n')
 
 	// Table header
 	uploadCol := m.configUploadTest
@@ -2151,7 +2357,7 @@ func (m AppModel) viewScanWithConfig() string {
 		sb.WriteString(styleGood.Render("  "+m.statusMsg) + "\n")
 	}
 	if m.configDone {
-		hint := "  c copy working endpoints   e export Clash/Sing-Box/Sub configs   q/esc back to menu"
+		hint := "  c copy working endpoints   e export configs   h history   q/esc back to menu"
 		if m.liveResultPath != "" {
 			hint += "\n" + styleDim.Render("  live results → "+m.liveResultPath)
 		}
@@ -2161,6 +2367,48 @@ func (m AppModel) viewScanWithConfig() string {
 	}
 
 	return sb.String()
+}
+
+func speedSparkline(rows []*xraytest.ValidationResult) string {
+	bars := []rune("▁▂▃▄▅▆▇█")
+	var speeds []float64
+	var maxSpeed float64
+	for _, r := range rows {
+		if r != nil && r.Throughput > 0 {
+			speeds = append(speeds, r.Throughput)
+			if r.Throughput > maxSpeed {
+				maxSpeed = r.Throughput
+			}
+		}
+	}
+	if len(speeds) == 0 || maxSpeed <= 0 {
+		return ""
+	}
+	if len(speeds) > 32 {
+		speeds = speeds[len(speeds)-32:]
+	}
+	var sb strings.Builder
+	for _, speed := range speeds {
+		idx := int((speed / maxSpeed) * float64(len(bars)-1))
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= len(bars) {
+			idx = len(bars) - 1
+		}
+		sb.WriteRune(bars[idx])
+	}
+	return sb.String()
+}
+
+func countHealthyPhase1(rows []*result.Result) int {
+	count := 0
+	for _, r := range rows {
+		if r != nil && r.IsHealthy() {
+			count++
+		}
+	}
+	return count
 }
 
 func (m AppModel) configSuccessCount() int {
@@ -2236,6 +2484,11 @@ func (m AppModel) handleScanWithConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		if m.configDone {
 			m.statusMsg = m.exportAllConfigs()
+			return m, nil
+		}
+	case "h":
+		if m.configDone {
+			m.page = PageHistory
 			return m, nil
 		}
 	}
@@ -3054,9 +3307,9 @@ func (m AppModel) viewConfigPhase1() string {
 	}
 
 	if len(m.configPhase1Results) > 0 {
-		hdr := fmt.Sprintf("  %-22s  %7s  %9s  %-8s  %6s",
-			"ENDPOINT", "LOSS", "AVG(ms)", "COLO", "STATUS")
-		sb.WriteString(fmt.Sprintf("%s\n%s\n", styleHeader.Render(hdr), styleSep.Render("  "+strings.Repeat("─", 64))))
+		hdr := fmt.Sprintf("  %-22s  %7s  %9s  %-8s  %-7s  %-6s  %-11s  %6s",
+			"ENDPOINT", "LOSS", "AVG(ms)", "COLO", "ASN", "CC", "CDN", "STATUS")
+		sb.WriteString(fmt.Sprintf("%s\n%s\n", styleHeader.Render(hdr), styleSep.Render("  "+strings.Repeat("─", 96))))
 
 		top := result.TopN(m.configPhase1Results, 20)
 		for _, r := range top {
@@ -3070,9 +3323,24 @@ func (m AppModel) viewConfigPhase1() string {
 				status = "✗"
 				lineStyle = styleBad
 			}
-			line := fmt.Sprintf("  %-22s  %6.1f%%  %9.2f  %-8s  %6s",
+			country := r.Country
+			if country == "" {
+				country = "—"
+			}
+			asn := "—"
+			if r.ASN > 0 {
+				asn = fmt.Sprintf("AS%d", r.ASN)
+			}
+			cdn := r.CDNStatus
+			if cdn == "" {
+				cdn = "unknown"
+			}
+			if r.BlockedIR {
+				cdn = "IR-blocked"
+			}
+			line := fmt.Sprintf("  %-22s  %6.1f%%  %9.2f  %-8s  %-7s  %-6s  %-11s  %6s",
 				formatEndpoint(r.IP.String(), r.Port), r.Loss(),
-				float64(r.Avg().Milliseconds()), colo, status)
+				float64(r.Avg().Milliseconds()), colo, asn, country, cdn, status)
 			sb.WriteString(lineStyle.Render(line) + "\n")
 		}
 		sb.WriteRune('\n')
@@ -3425,7 +3693,7 @@ func (m AppModel) exportAllConfigs() string {
 		swapped := cfg.WithEndpoint(parts[0], port)
 		subUrls = append(subUrls, swapped.ToShareURL())
 	}
-	subPath := filepath.Join(dir, "senpaiscanner-sub.txt")
+	subPath := filepath.Join(dir, "mehrpol-sub.txt")
 	_ = os.WriteFile(subPath, []byte(strings.Join(subUrls, "\n")+"\n"), 0644)
 
 	// 2. Export Sing-Box JSON
@@ -3509,7 +3777,7 @@ func (m AppModel) exportAllConfigs() string {
 		"outbounds": sbOutbounds,
 	}
 	sbJSON, _ := json.MarshalIndent(sbConfig, "", "  ")
-	sbPath := filepath.Join(dir, "senpaiscanner-singbox.json")
+	sbPath := filepath.Join(dir, "mehrpol-singbox.json")
 	_ = os.WriteFile(sbPath, sbJSON, 0644)
 
 	// 3. Export Clash YAML
@@ -3564,7 +3832,7 @@ func (m AppModel) exportAllConfigs() string {
 			clashLines = append(clashLines, fmt.Sprintf("      grpc-service-name: %s", cfg.ServiceName))
 		}
 	}
-	clashPath := filepath.Join(dir, "senpaiscanner-clash.yaml")
+	clashPath := filepath.Join(dir, "mehrpol-clash.yaml")
 	_ = os.WriteFile(clashPath, []byte(strings.Join(clashLines, "\n")+"\n"), 0644)
 
 	return fmt.Sprintf("✓ configs exported to Clash, Sing-Box, and Sub files in %s", dir)

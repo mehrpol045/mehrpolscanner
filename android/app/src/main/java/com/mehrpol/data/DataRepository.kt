@@ -1,4 +1,4 @@
-package com.matinsenpai.senpaiscanner.data
+package com.mehrpol.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
