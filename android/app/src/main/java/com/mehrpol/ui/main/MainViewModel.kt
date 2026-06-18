@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,7 +54,15 @@ data class ScanConfig(
 
     // Top N
     val topNType: String = "50",
-    val customTopN: String = ""
+    val customTopN: String = "",
+
+    // Generators
+    val fragmentInterval: String = "30",
+    val fragmentPackets: String = "8",
+    val cleanIp: String = "",
+    val protocolType: String = "VLESS",
+    val shadowsocksMethod: String = "chacha20-ietf-poly1305",
+    val generatedConfig: String = ""
 )
 
 data class IpResult(
@@ -65,9 +75,42 @@ data class IpResult(
     val isPhase2: Boolean = false,
     val phase2Type: String = "",
     val phase2Speed: Double = 0.0,
-    val phase2Status: Boolean = false
+    val phase2Status: Boolean = false,
+    val jitterMs: Int = 0,
+    val datacenterName: String = "",
+    val countryCode: String = "",
+    val region: String = "Unknown"
 )
 
+data class FavoriteIp(
+    val ip: String,
+    val port: Int,
+    val latencyMs: Int,
+    val jitterMs: Int,
+    val downloadSpeed: Double,
+    val colo: String,
+    val datacenterName: String,
+    val countryCode: String,
+    val region: String,
+    val lastSeen: String
+)
+
+data class MonitorSample(
+    val ip: String,
+    val port: Int,
+    val latencyMs: Int,
+    val stabilityPercent: Int,
+    val checkedAt: String,
+    val isBetter: Boolean = false
+)
+
+data class MonitorUiState(
+    val isScheduled: Boolean = false,
+    val intervalSeconds: Int = 300,
+    val isFloodRunning: Boolean = false,
+    val lastSamples: List<MonitorSample> = emptyList(),
+    val notificationMessage: String? = null
+)
 
 data class SniCheckResult(
     val host: String,
@@ -109,12 +152,16 @@ data class ScanUiState(
     val history: List<ScanHistoryEntry> = emptyList(),
     val error: String? = null,
     val config: ScanConfig = ScanConfig(),
-    val sniCheck: SniCheckUiState = SniCheckUiState()
+    val sniCheck: SniCheckUiState = SniCheckUiState(),
+    val favorites: List<FavoriteIp> = emptyList(),
+    val monitor: MonitorUiState = MonitorUiState(),
+    val autoReplacedConfig: String = ""
 )
 
 class MainViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(ScanUiState())
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
+    private var monitorJob: Job? = null
 
     private val scanCallback = object : Callback {
         override fun onProgress(tested: Long, healthy: Long, failed: Long, inFlight: Long, isPhase2: Boolean) {
@@ -134,7 +181,9 @@ class MainViewModel : ViewModel() {
         }
 
         override fun onResult(ip: String, port: Long, latencyMs: Long, loss: Double, colo: String, isHealthy: Boolean, isPhase2: Boolean, phase2Type: String, phase2Speed: Double, phase2Status: Boolean) {
-            val res = IpResult(ip, port.toInt(), latencyMs.toInt(), loss, colo, isHealthy, isPhase2, phase2Type, phase2Speed, phase2Status)
+            val res = enrichResult(
+                IpResult(ip, port.toInt(), latencyMs.toInt(), loss, colo, isHealthy, isPhase2, phase2Type, phase2Speed, phase2Status)
+            )
             val current = _uiState.value
             val newList = current.results.toMutableList()
             newList.add(0, res)
@@ -143,7 +192,12 @@ class MainViewModel : ViewModel() {
             } else {
                 current.latencySamples
             }
-            _uiState.value = current.copy(results = newList, latencySamples = newSamples)
+            val updatedConfig = maybeReplaceSavedConfig(current, res)
+            _uiState.value = current.copy(
+                results = newList,
+                latencySamples = newSamples,
+                autoReplacedConfig = updatedConfig ?: current.autoReplacedConfig
+            )
         }
 
         override fun onFinished() {
@@ -176,6 +230,72 @@ class MainViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(config = config)
     }
 
+    fun toggleFavorite(result: IpResult) {
+        val current = _uiState.value
+        val key = "${result.ip}:${result.port}"
+        val existing = current.favorites.any { "${it.ip}:${it.port}" == key }
+        val nextFavorites = if (existing) {
+            current.favorites.filterNot { "${it.ip}:${it.port}" == key }
+        } else {
+            val favorite = FavoriteIp(
+                ip = result.ip,
+                port = result.port,
+                latencyMs = result.latencyMs,
+                jitterMs = result.jitterMs,
+                downloadSpeed = result.phase2Speed,
+                colo = result.colo,
+                datacenterName = result.datacenterName,
+                countryCode = result.countryCode,
+                region = result.region,
+                lastSeen = nowText()
+            )
+            (listOf(favorite) + current.favorites).distinctBy { "${it.ip}:${it.port}" }
+        }
+        _uiState.value = current.copy(favorites = nextFavorites)
+    }
+
+    fun removeFavorite(ip: String, port: Int) {
+        _uiState.value = _uiState.value.copy(
+            favorites = _uiState.value.favorites.filterNot { it.ip == ip && it.port == port }
+        )
+    }
+
+    fun updateGeneratedConfig(content: String) {
+        _uiState.value = _uiState.value.copy(config = _uiState.value.config.copy(generatedConfig = content))
+    }
+
+    fun startOrStopMonitor() {
+        if (monitorJob?.isActive == true) {
+            monitorJob?.cancel()
+            monitorJob = null
+            _uiState.value = _uiState.value.copy(monitor = _uiState.value.monitor.copy(isScheduled = false))
+            return
+        }
+        _uiState.value = _uiState.value.copy(monitor = _uiState.value.monitor.copy(isScheduled = true))
+        monitorJob = viewModelScope.launch {
+            while (true) {
+                runMonitorPass(floodCount = 3, markRunning = false)
+                delay(_uiState.value.monitor.intervalSeconds.coerceAtLeast(30) * 1000L)
+            }
+        }
+    }
+
+    fun updateMonitorInterval(seconds: Int) {
+        _uiState.value = _uiState.value.copy(
+            monitor = _uiState.value.monitor.copy(intervalSeconds = seconds.coerceIn(30, 3600))
+        )
+    }
+
+    fun runPingFlood() {
+        viewModelScope.launch {
+            runMonitorPass(floodCount = 12, markRunning = true)
+        }
+    }
+
+    fun clearMonitorNotification() {
+        _uiState.value = _uiState.value.copy(monitor = _uiState.value.monitor.copy(notificationMessage = null))
+    }
+
     fun toggleScan() {
         if (Mobile.isRunning()) {
             Mobile.stopScan()
@@ -206,6 +326,119 @@ class MainViewModel : ViewModel() {
         } else {
             results.count { it.isHealthy }
         }
+    }
+
+
+    private suspend fun runMonitorPass(floodCount: Int, markRunning: Boolean) {
+        val favorites = _uiState.value.favorites
+        if (favorites.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                monitor = _uiState.value.monitor.copy(
+                    isFloodRunning = false,
+                    notificationMessage = "Add favorites before starting monitor tests"
+                )
+            )
+            return
+        }
+        if (markRunning) {
+            _uiState.value = _uiState.value.copy(monitor = _uiState.value.monitor.copy(isFloodRunning = true))
+        }
+        val samples = withContext(Dispatchers.IO) {
+            favorites.map { favorite ->
+                async {
+                    val latencies = (1..floodCount).mapNotNull {
+                        tcpProbeLatency(favorite.ip, favorite.port, 2_500)
+                    }
+                    val average = latencies.takeIf { it.isNotEmpty() }?.average()?.toInt() ?: -1
+                    val stability = ((latencies.size.toDouble() / floodCount.toDouble()) * 100.0).toInt()
+                    MonitorSample(
+                        ip = favorite.ip,
+                        port = favorite.port,
+                        latencyMs = average,
+                        stabilityPercent = stability,
+                        checkedAt = nowText(),
+                        isBetter = average > 0 && favorite.latencyMs > 0 && average < favorite.latencyMs
+                    )
+                }
+            }.awaitAll()
+        }.sortedWith(compareBy<MonitorSample> { if (it.latencyMs > 0) it.latencyMs else Int.MAX_VALUE }.thenByDescending { it.stabilityPercent })
+
+        val best = samples.firstOrNull { it.isBetter }
+        val message = best?.let { "Better IP found: ${it.ip}:${it.port} at ${it.latencyMs} ms" }
+        _uiState.value = _uiState.value.copy(
+            monitor = _uiState.value.monitor.copy(
+                isFloodRunning = false,
+                lastSamples = samples,
+                notificationMessage = message
+            )
+        )
+    }
+
+    private fun tcpProbeLatency(ip: String, port: Int, timeoutMs: Int): Int? {
+        val started = System.currentTimeMillis()
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(ip, port), timeoutMs)
+            }
+            (System.currentTimeMillis() - started).toInt()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun maybeReplaceSavedConfig(current: ScanUiState, result: IpResult): String? {
+        if (!result.isHealthy && !result.phase2Status) return null
+        val favorites = current.favorites
+        if (favorites.isEmpty()) return null
+        val bestFavorite = favorites.minByOrNull { if (it.latencyMs > 0) it.latencyMs else Int.MAX_VALUE } ?: return null
+        if (result.latencyMs <= 0 || bestFavorite.latencyMs <= 0 || result.latencyMs >= bestFavorite.latencyMs) return null
+        val source = current.config.generatedConfig.ifBlank { current.config.configUrl }
+        if (!source.contains("://")) return null
+        return replaceProxyEndpointText(source, result.ip, result.port, "mehrpol-auto-${result.ip}")
+    }
+
+    private fun enrichResult(result: IpResult): IpResult {
+        val pop = popInfo(result.colo)
+        val jitter = estimateJitter(result.latencyMs, result.loss, result.phase2Speed)
+        return result.copy(
+            jitterMs = jitter,
+            datacenterName = pop.name,
+            countryCode = pop.countryCode,
+            region = pop.region
+        )
+    }
+
+    private fun estimateJitter(latencyMs: Int, loss: Double, speed: Double): Int {
+        if (latencyMs <= 0) return 0
+        val lossPenalty = (loss * 2.5).toInt()
+        val speedBonus = if (speed > 1024 * 1024) -2 else 0
+        return (latencyMs / 12 + lossPenalty + speedBonus).coerceAtLeast(1)
+    }
+
+    private fun popInfo(colo: String): CloudflarePopInfo {
+        val key = colo.trim().uppercase(Locale.US)
+        return CLOUDFLARE_POP_INFO[key] ?: CloudflarePopInfo(
+            name = if (key.isNotBlank()) "Cloudflare $key" else "Cloudflare edge",
+            countryCode = "",
+            region = "Unknown"
+        )
+    }
+
+    private fun nowText(): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+
+    private fun replaceProxyEndpointText(template: String, ip: String, port: Int, fragment: String): String {
+        val schemeEnd = template.indexOf("://")
+        if (schemeEnd < 0) return template
+        val authorityStart = schemeEnd + 3
+        val authorityEnd = listOf('/', '?', '#')
+            .map { template.indexOf(it, authorityStart) }
+            .filter { it >= 0 }
+            .minOrNull() ?: template.length
+        val authority = template.substring(authorityStart, authorityEnd)
+        val userInfoEnd = authority.lastIndexOf('@')
+        val userInfo = if (userInfoEnd >= 0) authority.substring(0, userInfoEnd + 1) else ""
+        val withoutFragment = template.substring(0, authorityStart) + userInfo + ip + ":$port" + template.substring(authorityEnd).substringBefore('#')
+        return "$withoutFragment#$fragment"
     }
 
     fun runSniCheck(host: String, sni: String, portText: String) {
@@ -398,5 +631,58 @@ class MainViewModel : ViewModel() {
             "172.64.0.0/13",
             "131.0.72.0/22"
         )
+
+        private data class CloudflarePopInfo(
+            val name: String,
+            val countryCode: String,
+            val region: String
+        )
+
+        private val CLOUDFLARE_POP_INFO = mapOf(
+            "AMS" to CloudflarePopInfo("Amsterdam", "NL", "Europe"),
+            "ARN" to CloudflarePopInfo("Stockholm", "SE", "Europe"),
+            "CDG" to CloudflarePopInfo("Paris", "FR", "Europe"),
+            "FRA" to CloudflarePopInfo("Frankfurt", "DE", "Europe"),
+            "LHR" to CloudflarePopInfo("London", "GB", "Europe"),
+            "MAD" to CloudflarePopInfo("Madrid", "ES", "Europe"),
+            "MXP" to CloudflarePopInfo("Milan", "IT", "Europe"),
+            "WAW" to CloudflarePopInfo("Warsaw", "PL", "Europe"),
+            "IAD" to CloudflarePopInfo("Ashburn", "US", "US"),
+            "ATL" to CloudflarePopInfo("Atlanta", "US", "US"),
+            "BOS" to CloudflarePopInfo("Boston", "US", "US"),
+            "DFW" to CloudflarePopInfo("Dallas", "US", "US"),
+            "DEN" to CloudflarePopInfo("Denver", "US", "US"),
+            "EWR" to CloudflarePopInfo("Newark", "US", "US"),
+            "LAX" to CloudflarePopInfo("Los Angeles", "US", "US"),
+            "MIA" to CloudflarePopInfo("Miami", "US", "US"),
+            "ORD" to CloudflarePopInfo("Chicago", "US", "US"),
+            "SEA" to CloudflarePopInfo("Seattle", "US", "US"),
+            "SJC" to CloudflarePopInfo("San Jose", "US", "US"),
+            "YYZ" to CloudflarePopInfo("Toronto", "CA", "North America"),
+            "YVR" to CloudflarePopInfo("Vancouver", "CA", "North America"),
+            "BOM" to CloudflarePopInfo("Mumbai", "IN", "Asia"),
+            "DEL" to CloudflarePopInfo("Delhi", "IN", "Asia"),
+            "SIN" to CloudflarePopInfo("Singapore", "SG", "Asia"),
+            "HKG" to CloudflarePopInfo("Hong Kong", "HK", "Asia"),
+            "NRT" to CloudflarePopInfo("Tokyo", "JP", "Asia"),
+            "KIX" to CloudflarePopInfo("Osaka", "JP", "Asia"),
+            "ICN" to CloudflarePopInfo("Seoul", "KR", "Asia"),
+            "TPE" to CloudflarePopInfo("Taipei", "TW", "Asia"),
+            "BKK" to CloudflarePopInfo("Bangkok", "TH", "Asia"),
+            "KUL" to CloudflarePopInfo("Kuala Lumpur", "MY", "Asia"),
+            "MNL" to CloudflarePopInfo("Manila", "PH", "Asia"),
+            "SYD" to CloudflarePopInfo("Sydney", "AU", "Oceania"),
+            "MEL" to CloudflarePopInfo("Melbourne", "AU", "Oceania"),
+            "AKL" to CloudflarePopInfo("Auckland", "NZ", "Oceania"),
+            "GRU" to CloudflarePopInfo("Sao Paulo", "BR", "South America"),
+            "EZE" to CloudflarePopInfo("Buenos Aires", "AR", "South America"),
+            "SCL" to CloudflarePopInfo("Santiago", "CL", "South America"),
+            "JNB" to CloudflarePopInfo("Johannesburg", "ZA", "Africa"),
+            "CPT" to CloudflarePopInfo("Cape Town", "ZA", "Africa"),
+            "DXB" to CloudflarePopInfo("Dubai", "AE", "Middle East"),
+            "DOH" to CloudflarePopInfo("Doha", "QA", "Middle East"),
+            "TLV" to CloudflarePopInfo("Tel Aviv", "IL", "Middle East")
+        )
+
     }
 }
