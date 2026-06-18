@@ -12,6 +12,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
@@ -39,7 +44,11 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -207,10 +216,62 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     )
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings") },
+                    icon = { Icon(Icons.Default.Radar, contentDescription = "Diagnostics") },
+                    label = { Text("Diagnostics", fontSize = 10.sp, maxLines = 1) },
                     selected = selectedTab == 5,
                     onClick = { selectedTab = 5 },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.background,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray
+                    )
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Language, contentDescription = "Domains") },
+                    label = { Text("Domains", fontSize = 10.sp, maxLines = 1) },
+                    selected = selectedTab == 6,
+                    onClick = { selectedTab = 6 },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.background,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray
+                    )
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Dns, contentDescription = "DNS") },
+                    label = { Text("DNS", fontSize = 10.sp, maxLines = 1) },
+                    selected = selectedTab == 7,
+                    onClick = { selectedTab = 7 },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.background,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray
+                    )
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Search, contentDescription = "DNS Hunter") },
+                    label = { Text("Hunter", fontSize = 10.sp, maxLines = 1) },
+                    selected = selectedTab == 8,
+                    onClick = { selectedTab = 8 },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.background,
+                        selectedTextColor = MehrpolCyan,
+                        indicatorColor = MehrpolCyan,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray
+                    )
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                    label = { Text("Settings", fontSize = 10.sp, maxLines = 1) },
+                    selected = selectedTab == 9,
+                    onClick = { selectedTab = 9 },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.background,
                         selectedTextColor = MehrpolCyan,
@@ -247,8 +308,10 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                 1 -> HistoryScreen(uiState.history)
                 2 -> SniCheckScreen(
                     state = uiState.sniCheck,
+                    spoofState = uiState.sniSpoof,
                     config = uiState.config,
                     onRunCheck = viewModel::runSniCheck,
+                    onRunSpoofCheck = viewModel::runSniSpoofCheck,
                     onConfigChanged = viewModel::updateConfig
                 )
                 3 -> FavoritesScreen(
@@ -265,6 +328,24 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                     onIntervalChanged = viewModel::updateMonitorInterval,
                     onClearNotification = viewModel::clearMonitorNotification,
                     context = context
+                )
+                5 -> DiagnosticsScreen(
+                    state = uiState.diagnostics,
+                    onStart = viewModel::runDiagnostics
+                )
+                6 -> DomainsScreen(
+                    state = uiState.domains,
+                    onAddDomain = viewModel::addCustomDomain,
+                    onCheckAll = viewModel::checkAllDomains,
+                    onCheckDomain = viewModel::checkDomain
+                )
+                7 -> DnsScreen(
+                    state = uiState.dns,
+                    onTestAll = viewModel::testAllDnsProviders
+                )
+                8 -> DnsHunterScreen(
+                    state = uiState.dnsHunter,
+                    onRun = viewModel::runDnsHunter
                 )
                 else -> SettingsScreen(
                     config = uiState.config,
@@ -921,8 +1002,10 @@ private fun csvEscape(value: String): String {
 @Composable
 fun SniCheckScreen(
     state: SniCheckUiState,
+    spoofState: SniSpoofUiState,
     config: ScanConfig,
     onRunCheck: (String, String, String) -> Unit,
+    onRunSpoofCheck: (String, String, String) -> Unit,
     onConfigChanged: (ScanConfig) -> Unit
 ) {
     var host by remember { mutableStateOf("") }
@@ -985,6 +1068,12 @@ fun SniCheckScreen(
             item {
                 Text(err, color = MehrpolError, fontWeight = FontWeight.Medium)
             }
+        }
+        item {
+            SniSpoofSection(
+                state = spoofState,
+                onRunSpoofCheck = onRunSpoofCheck
+            )
         }
         if (state.isRangeScan && (state.isRunning || state.scanResults.isNotEmpty())) {
             item {
@@ -1119,6 +1208,382 @@ private fun ScanConfig.withSniEndpoint(context: Context, result: SniCheckResult)
     }
 }
 
+
+
+
+@Composable
+fun DiagnosticsScreen(state: DiagnosticsUiState, onStart: () -> Unit) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Text("Diagnostics", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
+            Text("Pinpoint DNS, routing, socket, HTTP, and HTTPS failures", fontSize = 12.sp, color = Color.Gray)
+        }
+        item { RadarPulseIcon(state.isRunning) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                IpStatusCardView(state.ipv4Status, Modifier.weight(1f))
+                IpStatusCardView(state.ipv6Status, Modifier.weight(1f))
+            }
+        }
+        item {
+            Button(
+                onClick = onStart,
+                enabled = !state.isRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (state.isRunning) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.background)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Running...")
+                } else {
+                    Text("Start Diagnostic", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        item {
+            Text("Diagnostic checklist", fontWeight = FontWeight.Bold, color = MehrpolCyan)
+        }
+        val rows = state.results.ifEmpty {
+            listOf("DNS Resolution", "IPv4 Socket", "IPv6 Socket", "TCP routing", "HTTP", "HTTPS").map {
+                ProbeResult(it, false, 0, "Not tested")
+            }
+        }
+        items(rows) { result -> ProbeResultRow(result, state.results.isNotEmpty()) }
+    }
+}
+
+@Composable
+private fun RadarPulseIcon(isRunning: Boolean) {
+    val transition = rememberInfiniteTransition(label = "radar")
+    val pulse by transition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1400), RepeatMode.Restart),
+        label = "pulse"
+    )
+    Canvas(modifier = Modifier.fillMaxWidth().height(170.dp)) {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val baseRadius = size.minDimension * 0.22f
+        val sweepRadius = baseRadius + (size.minDimension * 0.22f * if (isRunning) pulse else 0.45f)
+        drawCircle(MehrpolCyan.copy(alpha = 0.10f), radius = sweepRadius, center = center, style = Stroke(width = 3.dp.toPx()))
+        drawCircle(MehrpolCyan.copy(alpha = 0.22f), radius = baseRadius * 1.35f, center = center, style = Stroke(width = 2.dp.toPx()))
+        drawCircle(MehrpolCyan.copy(alpha = 0.35f), radius = baseRadius * 0.72f, center = center, style = Stroke(width = 2.dp.toPx()))
+        drawCircle(MehrpolCyan, radius = 10.dp.toPx(), center = center)
+        drawLine(MehrpolCyan.copy(alpha = 0.8f), center, Offset(center.x + baseRadius * 1.55f, center.y - baseRadius * 0.55f), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+    }
+}
+
+@Composable
+private fun IpStatusCardView(status: IpStatusCard, modifier: Modifier = Modifier) {
+    val color = when (status.isAvailable) {
+        true -> MehrpolSuccess
+        false -> MehrpolError
+        null -> Color.Gray
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = modifier) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(status.label, fontWeight = FontWeight.Bold)
+            Text(
+                text = when (status.isAvailable) {
+                    true -> "Available"
+                    false -> "Blocked"
+                    null -> "Not tested"
+                },
+                color = color,
+                fontWeight = FontWeight.Bold
+            )
+            Text(status.latencyMs?.let { "$it ms" } ?: "--", color = Color.Gray, fontSize = 12.sp)
+            Text(status.detail, color = Color.Gray, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun ProbeResultRow(result: ProbeResult, hasRun: Boolean) {
+    val success = hasRun && result.isSuccess
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (success) Icons.Default.Check else Icons.Default.Close,
+                contentDescription = null,
+                tint = if (success) MehrpolSuccess else if (hasRun) MehrpolError else Color.Gray
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(result.name, fontWeight = FontWeight.Bold)
+                Text(result.detail, color = Color.Gray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text(if (hasRun) "${result.latencyMs} ms" else "--", color = if (success) MehrpolSuccess else Color.Gray, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun DomainsScreen(
+    state: DomainsUiState,
+    onAddDomain: (String) -> Unit,
+    onCheckAll: () -> Unit,
+    onCheckDomain: (String) -> Unit
+) {
+    var customDomain by remember { mutableStateOf("") }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Text("Domains", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
+            Text("Green means reachable, red means blocked or failing", fontSize = 12.sp, color = Color.Gray)
+        }
+        item {
+            OutlinedTextField(
+                value = customDomain,
+                onValueChange = { customDomain = it },
+                label = { Text("Custom domain") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = {
+                        onAddDomain(customDomain)
+                        customDomain = ""
+                    },
+                    border = BorderStroke(1.dp, MehrpolCyan),
+                    modifier = Modifier.weight(1f)
+                ) { Text("Add", color = MehrpolCyan, fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = onCheckAll,
+                    enabled = !state.isRunning,
+                    colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (state.isRunning) "Checking..." else "Check All", fontWeight = FontWeight.Bold) }
+            }
+        }
+        items(state.domains) { domain ->
+            DomainResultCard(
+                result = state.results[domain] ?: DomainCheckResult(domain),
+                isRunning = state.isRunning,
+                onCheck = { onCheckDomain(domain) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun DomainResultCard(result: DomainCheckResult, isRunning: Boolean, onCheck: () -> Unit) {
+    val color = when (result.isAccessible) {
+        true -> MehrpolSuccess
+        false -> MehrpolError
+        null -> Color.Gray
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(result.domain, fontWeight = FontWeight.Bold)
+                Text(result.detail, color = Color.Gray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text(result.latencyMs?.let { "$it ms" } ?: "--", color = color, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(onClick = onCheck, enabled = !isRunning, border = BorderStroke(1.dp, MehrpolCyan)) {
+                Text("Check", color = MehrpolCyan, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun DnsScreen(state: DnsUiState, onTestAll: () -> Unit) {
+    val maxLatency = state.results.filter { it.isReachable }.maxOfOrNull { it.latencyMs.coerceAtLeast(1) } ?: 1L
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Text("DNS", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
+            Text("Providers are sorted by fastest successful response", fontSize = 12.sp, color = Color.Gray)
+        }
+        item {
+            Button(
+                onClick = onTestAll,
+                enabled = !state.isRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (state.isRunning) "Testing..." else "Test All", fontWeight = FontWeight.Bold) }
+        }
+        if (state.results.isEmpty()) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+                    Text("Run Test All to compare DNS latency", modifier = Modifier.padding(16.dp), color = Color.Gray)
+                }
+            }
+        } else {
+            items(state.results) { result -> DnsProviderRow(result, maxLatency) }
+        }
+    }
+}
+
+@Composable
+private fun DnsProviderRow(result: DnsTestResult, maxLatency: Long) {
+    val color = if (result.isReachable) MehrpolSuccess else MehrpolError
+    val fraction = if (result.isReachable) {
+        (result.latencyMs.coerceAtLeast(1).toFloat() / maxLatency.toFloat()).coerceIn(0.05f, 1f)
+    } else {
+        1f
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(result.provider.name, fontWeight = FontWeight.Bold)
+                    Text(result.provider.address, color = Color.Gray, fontSize = 12.sp)
+                }
+                Text(if (result.isReachable) "${result.latencyMs} ms" else "Failed", color = color, fontWeight = FontWeight.Bold)
+            }
+            Box(modifier = Modifier.fillMaxWidth().height(12.dp).background(Color.Gray.copy(alpha = 0.18f), RoundedCornerShape(4.dp))) {
+                Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(fraction).background(color, RoundedCornerShape(4.dp)))
+            }
+            Text(result.detail, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+fun DnsHunterScreen(state: DnsHunterUiState, onRun: (String) -> Unit) {
+    var domain by remember(state.domain) { mutableStateOf(state.domain) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Text("DNS Hunter", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
+            Text("Compares Iranian resolver answers with a trusted baseline", fontSize = 12.sp, color = Color.Gray)
+        }
+        item {
+            OutlinedTextField(
+                value = domain,
+                onValueChange = { domain = it },
+                label = { Text("Domain") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        item {
+            Button(
+                onClick = { onRun(domain) },
+                enabled = !state.isRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = MehrpolCyan, contentColor = MaterialTheme.colorScheme.background),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (state.isRunning) "Testing..." else "Run DNS Hunter", fontWeight = FontWeight.Bold) }
+        }
+        state.error?.let { error ->
+            item { Text(error, color = MehrpolError, fontWeight = FontWeight.Medium) }
+        }
+        if (state.baselineIps.isNotEmpty()) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Trusted baseline", fontWeight = FontWeight.Bold, color = MehrpolCyan)
+                        Text(state.baselineIps.joinToString(", "), color = Color.Gray, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+        items(state.results) { result -> DnsHunterResultCard(result) }
+    }
+}
+
+@Composable
+private fun DnsHunterResultCard(result: DnsHunterResult) {
+    val color = if (result.isHijacked) MehrpolError else MehrpolSuccess
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (result.isHijacked) Icons.Default.Close else Icons.Default.Check,
+                contentDescription = null,
+                tint = color
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(result.datacenter, fontWeight = FontWeight.Bold)
+                Text(result.resolver, color = Color.Gray, fontSize = 12.sp)
+                Text(result.resolvedIps.joinToString(", ").ifBlank { "No answer" }, color = color, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(result.detail, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text("${result.latencyMs} ms", color = color, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun SniSpoofSection(
+    state: SniSpoofUiState,
+    onRunSpoofCheck: (String, String, String) -> Unit
+) {
+    var host by remember { mutableStateOf("") }
+    var sniValues by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("443") }
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("SNI Spoof Check", fontWeight = FontWeight.Bold, color = MehrpolCyan)
+            OutlinedTextField(
+                value = host,
+                onValueChange = { host = it },
+                label = { Text("Host or IP") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = sniValues,
+                onValueChange = { sniValues = it },
+                label = { Text("SNI values, separated by comma or newline") },
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = port,
+                onValueChange = { port = it.filter(Char::isDigit).take(5) },
+                label = { Text("Port") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = { onRunSpoofCheck(host, sniValues, port) },
+                enabled = !state.isRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = MehrpolPrimary, contentColor = Color.White),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (state.isRunning) "Checking..." else "Check SNI Spoof", fontWeight = FontWeight.Bold) }
+            state.error?.let { Text(it, color = MehrpolError, fontWeight = FontWeight.Medium) }
+            state.results.forEach { result ->
+                val open = result.isValid
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (open) Icons.Default.Check else Icons.Default.Close,
+                        contentDescription = null,
+                        tint = if (open) MehrpolSuccess else MehrpolError,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(result.sni, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(result.message, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text(if (open) "Open" else "Blocked", color = if (open) MehrpolSuccess else MehrpolError, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
 
 
 @Composable

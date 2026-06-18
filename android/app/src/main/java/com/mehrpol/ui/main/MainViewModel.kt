@@ -20,11 +20,17 @@ import com.mehrpol.mobile.Mobile
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.HttpURLConnection
 import java.net.InetSocketAddress
+import java.net.InetAddress
+import java.net.URL
 import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.random.Random
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -132,6 +138,94 @@ data class SniCheckUiState(
     val error: String? = null
 )
 
+
+data class ProbeResult(
+    val name: String,
+    val isSuccess: Boolean,
+    val latencyMs: Long,
+    val detail: String
+)
+
+data class IpStatusCard(
+    val label: String,
+    val isAvailable: Boolean? = null,
+    val latencyMs: Long? = null,
+    val detail: String = "Not tested"
+)
+
+data class DiagnosticsUiState(
+    val isRunning: Boolean = false,
+    val ipv4Status: IpStatusCard = IpStatusCard("IPv4"),
+    val ipv6Status: IpStatusCard = IpStatusCard("IPv6"),
+    val results: List<ProbeResult> = emptyList()
+)
+
+data class DomainCheckResult(
+    val domain: String,
+    val isAccessible: Boolean? = null,
+    val latencyMs: Long? = null,
+    val detail: String = "Not tested"
+)
+
+data class DomainsUiState(
+    val isRunning: Boolean = false,
+    val domains: List<String> = DEFAULT_DOMAINS,
+    val results: Map<String, DomainCheckResult> = DEFAULT_DOMAINS.associateWith { DomainCheckResult(it) }
+)
+
+data class DnsProvider(
+    val name: String,
+    val address: String
+)
+
+data class DnsTestResult(
+    val provider: DnsProvider,
+    val isReachable: Boolean,
+    val latencyMs: Long,
+    val detail: String
+)
+
+data class DnsUiState(
+    val isRunning: Boolean = false,
+    val results: List<DnsTestResult> = emptyList()
+)
+
+data class DnsHunterResult(
+    val datacenter: String,
+    val resolver: String,
+    val resolvedIps: List<String>,
+    val isHijacked: Boolean,
+    val latencyMs: Long,
+    val detail: String
+)
+
+data class DnsHunterUiState(
+    val isRunning: Boolean = false,
+    val domain: String = "",
+    val baselineIps: List<String> = emptyList(),
+    val results: List<DnsHunterResult> = emptyList(),
+    val error: String? = null
+)
+
+data class SniSpoofUiState(
+    val isRunning: Boolean = false,
+    val results: List<SniCheckResult> = emptyList(),
+    val error: String? = null
+)
+
+private val DEFAULT_DOMAINS = listOf(
+    "google.com",
+    "github.com",
+    "youtube.com",
+    "twitter.com",
+    "instagram.com",
+    "telegram.org",
+    "whatsapp.com",
+    "discord.com",
+    "reddit.com",
+    "linkedin.com"
+)
+
 data class ScanHistoryEntry(
     val date: String,
     val ipCount: Int,
@@ -153,8 +247,13 @@ data class ScanUiState(
     val error: String? = null,
     val config: ScanConfig = ScanConfig(),
     val sniCheck: SniCheckUiState = SniCheckUiState(),
+    val sniSpoof: SniSpoofUiState = SniSpoofUiState(),
     val favorites: List<FavoriteIp> = emptyList(),
     val monitor: MonitorUiState = MonitorUiState(),
+    val diagnostics: DiagnosticsUiState = DiagnosticsUiState(),
+    val domains: DomainsUiState = DomainsUiState(),
+    val dns: DnsUiState = DnsUiState(),
+    val dnsHunter: DnsHunterUiState = DnsHunterUiState(),
     val autoReplacedConfig: String = ""
 )
 
@@ -605,11 +704,362 @@ class MainViewModel : ViewModel() {
         ).joinToString(".")
     }
 
+
+
+    fun runDiagnostics() {
+        if (_uiState.value.diagnostics.isRunning) return
+        _uiState.value = _uiState.value.copy(
+            diagnostics = DiagnosticsUiState(isRunning = true)
+        )
+        viewModelScope.launch {
+            val results = withContext(Dispatchers.IO) {
+                val dns = async { runProbe("DNS Resolution") { resolveSystem("google.com") } }
+                val ipv4Socket = async { runProbe("IPv4 Socket") { tcpProbe("1.1.1.1", 443, 4_000) } }
+                val ipv6Socket = async { runProbe("IPv6 Socket") { tcpProbe("2606:4700:4700::1111", 443, 4_000) } }
+                val tcpRouting = async { runProbe("TCP routing") { tcpProbe("8.8.8.8", 53, 4_000) } }
+                val http = async { runProbe("HTTP") { httpProbe("http://connectivitycheck.gstatic.com/generate_204", 5_000) } }
+                val https = async { runProbe("HTTPS") { httpProbe("https://www.google.com/generate_204", 5_000) } }
+                val checklist = awaitAll(dns, ipv4Socket, ipv6Socket, tcpRouting, http, https)
+                val ipv4 = buildIpStatus("IPv4", checklist.firstOrNull { it.name == "IPv4 Socket" })
+                val ipv6 = buildIpStatus("IPv6", checklist.firstOrNull { it.name == "IPv6 Socket" })
+                Triple(ipv4, ipv6, checklist)
+            }
+            _uiState.value = _uiState.value.copy(
+                diagnostics = DiagnosticsUiState(
+                    isRunning = false,
+                    ipv4Status = results.first,
+                    ipv6Status = results.second,
+                    results = results.third
+                )
+            )
+        }
+    }
+
+    fun addCustomDomain(domain: String) {
+        val clean = normalizeDomain(domain)
+        if (clean.isBlank()) return
+        val current = _uiState.value.domains
+        if (current.domains.any { it.equals(clean, ignoreCase = true) }) return
+        val nextDomains = current.domains + clean
+        _uiState.value = _uiState.value.copy(
+            domains = current.copy(
+                domains = nextDomains,
+                results = current.results + (clean to DomainCheckResult(clean))
+            )
+        )
+    }
+
+    fun checkAllDomains() {
+        val domains = _uiState.value.domains.domains
+        _uiState.value = _uiState.value.copy(domains = _uiState.value.domains.copy(isRunning = true))
+        viewModelScope.launch {
+            val checked = withContext(Dispatchers.IO) {
+                domains.map { domain -> async { performDomainCheck(domain) } }.awaitAll()
+            }.associateBy { it.domain }
+            _uiState.value = _uiState.value.copy(domains = _uiState.value.domains.copy(isRunning = false, results = checked))
+        }
+    }
+
+    fun checkDomain(domain: String) {
+        val clean = normalizeDomain(domain)
+        if (clean.isBlank()) return
+        _uiState.value = _uiState.value.copy(domains = _uiState.value.domains.copy(isRunning = true))
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { performDomainCheck(clean) }
+            val current = _uiState.value.domains
+            _uiState.value = _uiState.value.copy(
+                domains = current.copy(
+                    isRunning = false,
+                    results = current.results + (clean to result)
+                )
+            )
+        }
+    }
+
+    fun testAllDnsProviders() {
+        if (_uiState.value.dns.isRunning) return
+        _uiState.value = _uiState.value.copy(dns = _uiState.value.dns.copy(isRunning = true))
+        viewModelScope.launch {
+            val results = withContext(Dispatchers.IO) {
+                DNS_PROVIDERS.map { provider ->
+                    async { testDnsProvider(provider) }
+                }.awaitAll()
+            }.sortedBy { if (it.isReachable) it.latencyMs else Long.MAX_VALUE }
+            _uiState.value = _uiState.value.copy(dns = DnsUiState(isRunning = false, results = results))
+        }
+    }
+
+    fun runDnsHunter(domain: String) {
+        val clean = normalizeDomain(domain)
+        if (clean.isBlank()) {
+            _uiState.value = _uiState.value.copy(dnsHunter = DnsHunterUiState(error = "Domain is required"))
+            return
+        }
+        _uiState.value = _uiState.value.copy(dnsHunter = DnsHunterUiState(isRunning = true, domain = clean))
+        viewModelScope.launch {
+            val baseline = withContext(Dispatchers.IO) { queryDnsA("8.8.8.8", clean, 5_000).ips.sorted() }
+            val results = withContext(Dispatchers.IO) {
+                IRAN_DNS_VANTAGE_POINTS.map { point ->
+                    async {
+                        val response = queryDnsA(point.address, clean, 5_000)
+                        val ips = response.ips.sorted()
+                        val hijacked = isDnsHijacked(ips, baseline, response.error)
+                        DnsHunterResult(
+                            datacenter = point.name,
+                            resolver = point.address,
+                            resolvedIps = ips,
+                            isHijacked = hijacked,
+                            latencyMs = response.latencyMs,
+                            detail = response.error ?: if (hijacked) "Answer differs from trusted baseline" else "Matches trusted baseline"
+                        )
+                    }
+                }.awaitAll()
+            }
+            _uiState.value = _uiState.value.copy(
+                dnsHunter = DnsHunterUiState(
+                    isRunning = false,
+                    domain = clean,
+                    baselineIps = baseline,
+                    results = results,
+                    error = if (baseline.isEmpty()) "Trusted baseline did not return an A record" else null
+                )
+            )
+        }
+    }
+
+    fun runSniSpoofCheck(host: String, sniValuesText: String, portText: String) {
+        val cleanHost = host.trim()
+        val values = sniValuesText
+            .split('\n', ',', ' ')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+        val port = portText.trim().toIntOrNull() ?: 443
+        if (cleanHost.isBlank()) {
+            _uiState.value = _uiState.value.copy(sniSpoof = SniSpoofUiState(error = "Host is required"))
+            return
+        }
+        if (values.isEmpty()) {
+            _uiState.value = _uiState.value.copy(sniSpoof = SniSpoofUiState(error = "At least one SNI value is required"))
+            return
+        }
+        if (port !in 1..65535) {
+            _uiState.value = _uiState.value.copy(sniSpoof = SniSpoofUiState(error = "Port must be between 1 and 65535"))
+            return
+        }
+        _uiState.value = _uiState.value.copy(sniSpoof = SniSpoofUiState(isRunning = true))
+        viewModelScope.launch {
+            val results = withContext(Dispatchers.IO) {
+                values.map { sni ->
+                    async { checkSni(cleanHost, sni, port, timeoutMs = 6_000) }
+                }.awaitAll()
+            }
+            _uiState.value = _uiState.value.copy(sniSpoof = SniSpoofUiState(results = results))
+        }
+    }
+
+    private fun runProbe(name: String, block: () -> String): ProbeResult {
+        val started = System.currentTimeMillis()
+        return try {
+            val detail = block()
+            ProbeResult(name, true, System.currentTimeMillis() - started, detail)
+        } catch (e: Exception) {
+            ProbeResult(name, false, System.currentTimeMillis() - started, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun buildIpStatus(label: String, result: ProbeResult?): IpStatusCard {
+        return IpStatusCard(
+            label = label,
+            isAvailable = result?.isSuccess,
+            latencyMs = result?.latencyMs,
+            detail = result?.detail ?: "Not tested"
+        )
+    }
+
+    private fun resolveSystem(domain: String): String {
+        val addresses = InetAddress.getAllByName(domain).map { it.hostAddress.orEmpty() }
+        if (addresses.isEmpty()) error("No addresses returned")
+        return addresses.joinToString(", ")
+    }
+
+    private fun tcpProbe(host: String, port: Int, timeoutMs: Int): String {
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress(host, port), timeoutMs)
+        }
+        return "$host:$port reachable"
+    }
+
+    private fun httpProbe(url: String, timeoutMs: Int): String {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = timeoutMs
+        connection.readTimeout = timeoutMs
+        connection.instanceFollowRedirects = false
+        connection.requestMethod = "GET"
+        return try {
+            val code = connection.responseCode
+            if (code in 200..399 || code == 204) "HTTP $code" else error("HTTP $code")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun performDomainCheck(domain: String): DomainCheckResult {
+        val started = System.currentTimeMillis()
+        return try {
+            val addresses = InetAddress.getAllByName(domain).map { it.hostAddress.orEmpty() }
+            if (addresses.isEmpty()) error("No DNS answer")
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(domain, 443), 5_000)
+            }
+            DomainCheckResult(domain, true, System.currentTimeMillis() - started, addresses.take(2).joinToString(", "))
+        } catch (e: Exception) {
+            DomainCheckResult(domain, false, System.currentTimeMillis() - started, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun testDnsProvider(provider: DnsProvider): DnsTestResult {
+        val response = queryDnsA(provider.address, "google.com", 5_000)
+        return DnsTestResult(
+            provider = provider,
+            isReachable = response.ips.isNotEmpty() && response.error == null,
+            latencyMs = response.latencyMs,
+            detail = response.error ?: response.ips.take(3).joinToString(", ")
+        )
+    }
+
+    private data class DnsWireResponse(
+        val ips: List<String>,
+        val latencyMs: Long,
+        val error: String? = null
+    )
+
+    private fun queryDnsA(resolver: String, domain: String, timeoutMs: Int): DnsWireResponse {
+        val started = System.currentTimeMillis()
+        return try {
+            val query = buildDnsQuery(domain)
+            DatagramSocket().use { socket ->
+                socket.soTimeout = timeoutMs
+                val target = InetAddress.getByName(resolver)
+                socket.send(DatagramPacket(query, query.size, target, 53))
+                val buffer = ByteArray(512)
+                val response = DatagramPacket(buffer, buffer.size)
+                socket.receive(response)
+                DnsWireResponse(parseDnsARecords(buffer.copyOf(response.length)), System.currentTimeMillis() - started)
+            }
+        } catch (e: Exception) {
+            DnsWireResponse(emptyList(), System.currentTimeMillis() - started, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun buildDnsQuery(domain: String): ByteArray {
+        val id = Random.nextInt(0, 65535)
+        val bytes = mutableListOf<Byte>()
+        fun addByte(value: Int) {
+            bytes += (value and 0xFF).toByte()
+        }
+        addByte(id shr 8)
+        addByte(id)
+        addByte(0x01)
+        addByte(0x00)
+        addByte(0x00)
+        addByte(0x01)
+        repeat(6) { addByte(0x00) }
+        domain.trim('.').split('.').forEach { label ->
+            addByte(label.length)
+            label.toByteArray(Charsets.UTF_8).forEach { bytes += it }
+        }
+        addByte(0x00)
+        addByte(0x00)
+        addByte(0x01)
+        addByte(0x00)
+        addByte(0x01)
+        return bytes.toByteArray()
+    }
+
+    private fun parseDnsARecords(response: ByteArray): List<String> {
+        if (response.size < 12) return emptyList()
+        val qdCount = readU16(response, 4)
+        val anCount = readU16(response, 6)
+        var offset = 12
+        repeat(qdCount) {
+            offset = skipDnsName(response, offset)
+            offset += 4
+        }
+        val ips = mutableListOf<String>()
+        repeat(anCount) {
+            offset = skipDnsName(response, offset)
+            if (offset + 10 > response.size) return ips
+            val type = readU16(response, offset)
+            val dataLength = readU16(response, offset + 8)
+            offset += 10
+            if (type == 1 && dataLength == 4 && offset + 4 <= response.size) {
+                ips += InetAddress.getByAddress(response.copyOfRange(offset, offset + 4)).hostAddress
+            }
+            offset += dataLength
+        }
+        return ips.distinct()
+    }
+
+    private fun skipDnsName(response: ByteArray, start: Int): Int {
+        var offset = start
+        while (offset < response.size) {
+            val length = response[offset].toInt() and 0xFF
+            if (length == 0) return offset + 1
+            if ((length and 0xC0) == 0xC0) return offset + 2
+            offset += length + 1
+        }
+        return response.size
+    }
+
+    private fun readU16(bytes: ByteArray, offset: Int): Int {
+        if (offset + 1 >= bytes.size) return 0
+        return ((bytes[offset].toInt() and 0xFF) shl 8) or (bytes[offset + 1].toInt() and 0xFF)
+    }
+
+    private fun isDnsHijacked(ips: List<String>, baseline: List<String>, error: String?): Boolean {
+        if (error != null || ips.isEmpty()) return true
+        val poisonedPrefixes = listOf("10.", "127.", "0.", "192.168.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")
+        if (ips.any { ip -> poisonedPrefixes.any { ip.startsWith(it) } }) return true
+        if (baseline.isEmpty()) return false
+        return ips.toSet().intersect(baseline.toSet()).isEmpty()
+    }
+
+    private fun normalizeDomain(domain: String): String {
+        return domain.trim()
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .substringBefore('/')
+            .substringBefore(':')
+            .lowercase(Locale.US)
+    }
+
     fun dismissError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
 
     companion object {
+
+        private val DNS_PROVIDERS = listOf(
+            DnsProvider("Google", "8.8.8.8"),
+            DnsProvider("Cloudflare", "1.1.1.1"),
+            DnsProvider("Shecan", "178.22.122.100"),
+            DnsProvider("403online", "10.202.10.202"),
+            DnsProvider("Begzar", "78.157.42.100"),
+            DnsProvider("Electro", "78.157.42.101"),
+            DnsProvider("radar.game", "radar.game")
+        )
+
+        private val IRAN_DNS_VANTAGE_POINTS = listOf(
+            DnsProvider("Google baseline", "8.8.8.8"),
+            DnsProvider("Cloudflare baseline", "1.1.1.1"),
+            DnsProvider("Shecan Iran", "178.22.122.100"),
+            DnsProvider("403online Iran", "10.202.10.202"),
+            DnsProvider("Begzar Iran", "78.157.42.100"),
+            DnsProvider("Electro Iran", "78.157.42.101"),
+            DnsProvider("Radar Game Iran", "radar.game")
+        )
+
         private const val CLOUDFLARE_SNI_CANDIDATES_PER_RANGE = 16
         private const val CLOUDFLARE_SNI_SCAN_CONCURRENCY = 24
         private const val CLOUDFLARE_SNI_SCAN_RESULT_LIMIT = 10
