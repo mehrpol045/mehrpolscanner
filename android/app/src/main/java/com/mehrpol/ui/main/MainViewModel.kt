@@ -2,6 +2,8 @@ package com.mehrpol.ui.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,6 +82,10 @@ data class SniCheckResult(
 data class SniCheckUiState(
     val isRunning: Boolean = false,
     val result: SniCheckResult? = null,
+    val scanResults: List<SniCheckResult> = emptyList(),
+    val scannedCount: Int = 0,
+    val totalCount: Int = 0,
+    val isRangeScan: Boolean = false,
     val error: String? = null
 )
 
@@ -206,9 +212,9 @@ class MainViewModel : ViewModel() {
         val cleanHost = host.trim()
         val cleanSni = sni.trim()
         val port = portText.trim().toIntOrNull() ?: 443
-        if (cleanHost.isEmpty() || cleanSni.isEmpty()) {
+        if (cleanSni.isEmpty()) {
             _uiState.value = _uiState.value.copy(
-                sniCheck = SniCheckUiState(error = "Host and SNI are required")
+                sniCheck = SniCheckUiState(error = "SNI is required")
             )
             return
         }
@@ -219,19 +225,71 @@ class MainViewModel : ViewModel() {
             return
         }
 
-        _uiState.value = _uiState.value.copy(sniCheck = SniCheckUiState(isRunning = true))
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { checkSni(cleanHost, cleanSni, port) }
-            _uiState.value = _uiState.value.copy(sniCheck = SniCheckUiState(result = result))
+        if (cleanHost.isEmpty()) {
+            runCloudflareSniScan(cleanSni, port)
+        } else {
+            _uiState.value = _uiState.value.copy(sniCheck = SniCheckUiState(isRunning = true))
+            viewModelScope.launch {
+                val result = withContext(Dispatchers.IO) { checkSni(cleanHost, cleanSni, port) }
+                _uiState.value = _uiState.value.copy(sniCheck = SniCheckUiState(result = result))
+            }
         }
     }
 
-    private fun checkSni(host: String, sni: String, port: Int): SniCheckResult {
+    private fun runCloudflareSniScan(sni: String, port: Int) {
+        val candidates = cloudflareSniCandidates()
+        _uiState.value = _uiState.value.copy(
+            sniCheck = SniCheckUiState(
+                isRunning = true,
+                isRangeScan = true,
+                totalCount = candidates.size
+            )
+        )
+        viewModelScope.launch {
+            val validResults = mutableListOf<SniCheckResult>()
+            var scanned = 0
+            withContext(Dispatchers.IO) {
+                candidates.chunked(CLOUDFLARE_SNI_SCAN_CONCURRENCY).forEach { batch ->
+                    val batchResults = batch.map { candidate ->
+                        async { checkSni(candidate, sni, port, timeoutMs = 4_000) }
+                    }.awaitAll()
+                    scanned += batchResults.size
+                    validResults += batchResults.filter { it.isValid }
+                    val topResults = validResults
+                        .sortedBy { it.latencyMs }
+                        .take(CLOUDFLARE_SNI_SCAN_RESULT_LIMIT)
+                    _uiState.value = _uiState.value.copy(
+                        sniCheck = SniCheckUiState(
+                            isRunning = scanned < candidates.size,
+                            scanResults = topResults,
+                            scannedCount = scanned,
+                            totalCount = candidates.size,
+                            isRangeScan = true
+                        )
+                    )
+                }
+            }
+            val finalResults = validResults
+                .sortedBy { it.latencyMs }
+                .take(CLOUDFLARE_SNI_SCAN_RESULT_LIMIT)
+            _uiState.value = _uiState.value.copy(
+                sniCheck = SniCheckUiState(
+                    scanResults = finalResults,
+                    scannedCount = candidates.size,
+                    totalCount = candidates.size,
+                    isRangeScan = true,
+                    error = if (finalResults.isEmpty()) "No valid Cloudflare IPs found for this SNI and port" else null
+                )
+            )
+        }
+    }
+
+    private fun checkSni(host: String, sni: String, port: Int, timeoutMs: Int = 7_000): SniCheckResult {
         val started = System.currentTimeMillis()
         return try {
             Socket().use { tcpSocket ->
-                tcpSocket.connect(InetSocketAddress(host, port), 7000)
-                tcpSocket.soTimeout = 7000
+                tcpSocket.connect(InetSocketAddress(host, port), timeoutMs)
+                tcpSocket.soTimeout = timeoutMs
                 val sslSocket = SSLContext.getDefault().socketFactory
                     .createSocket(tcpSocket, host, port, true) as SSLSocket
                 sslSocket.use { tlsSocket ->
@@ -269,7 +327,76 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    private fun cloudflareSniCandidates(): List<String> {
+        return CLOUDFLARE_IPV4_RANGES
+            .flatMap { range -> sampleIpv4Range(range, CLOUDFLARE_SNI_CANDIDATES_PER_RANGE) }
+            .distinct()
+    }
+
+    private fun sampleIpv4Range(cidr: String, count: Int): List<String> {
+        val parts = cidr.split("/")
+        if (parts.size != 2) return emptyList()
+        val base = ipv4ToLong(parts[0]) ?: return emptyList()
+        val prefix = parts[1].toIntOrNull() ?: return emptyList()
+        if (prefix !in 0..32) return emptyList()
+
+        val size = 1L shl (32 - prefix)
+        val firstUsableOffset = if (size > 2) 1L else 0L
+        val usableSize = if (size > 2) size - 2L else size
+        if (usableSize <= 0L) return emptyList()
+
+        val samples = count.coerceAtLeast(1)
+        val step = (usableSize / (samples + 1L)).coerceAtLeast(1L)
+        return (1..samples).map { index ->
+            val offset = firstUsableOffset + (step * index).coerceAtMost(usableSize - 1L)
+            longToIpv4(base + offset)
+        }
+    }
+
+    private fun ipv4ToLong(ip: String): Long? {
+        val octets = ip.split('.')
+        if (octets.size != 4) return null
+        return octets.fold(0L) { acc, octet ->
+            val value = octet.toIntOrNull() ?: return null
+            if (value !in 0..255) return null
+            (acc shl 8) or value.toLong()
+        }
+    }
+
+    private fun longToIpv4(value: Long): String {
+        return listOf(
+            (value shr 24) and 255L,
+            (value shr 16) and 255L,
+            (value shr 8) and 255L,
+            value and 255L
+        ).joinToString(".")
+    }
+
     fun dismissError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    companion object {
+        private const val CLOUDFLARE_SNI_CANDIDATES_PER_RANGE = 16
+        private const val CLOUDFLARE_SNI_SCAN_CONCURRENCY = 24
+        private const val CLOUDFLARE_SNI_SCAN_RESULT_LIMIT = 10
+
+        private val CLOUDFLARE_IPV4_RANGES = listOf(
+            "173.245.48.0/20",
+            "103.21.244.0/22",
+            "103.22.200.0/22",
+            "103.31.4.0/22",
+            "141.101.64.0/18",
+            "108.162.192.0/18",
+            "190.93.240.0/20",
+            "188.114.96.0/20",
+            "197.234.240.0/22",
+            "198.41.128.0/17",
+            "162.158.0.0/15",
+            "104.16.0.0/13",
+            "104.24.0.0/14",
+            "172.64.0.0/13",
+            "131.0.72.0/22"
+        )
     }
 }

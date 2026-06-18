@@ -1,5 +1,4 @@
 package com.mehrpol.ui.main
-
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -30,6 +29,8 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -64,7 +65,6 @@ import com.mehrpol.theme.MehrpolDarkSurface
 import com.mehrpol.theme.MehrpolError
 import com.mehrpol.theme.MehrpolPrimary
 import com.mehrpol.theme.MehrpolSuccess
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppUI(viewModel: MainViewModel = viewModel()) {
@@ -72,18 +72,15 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
     var selectedTab by remember { mutableStateOf(0) }
     var showInfoDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
-
     LaunchedEffect(uiState.error) {
         uiState.error?.let { err ->
             Toast.makeText(context, err, Toast.LENGTH_LONG).show()
             viewModel.dismissError()
         }
     }
-
     if (showInfoDialog) {
         InfoDialog(onDismiss = { showInfoDialog = false })
     }
-
     Scaffold(
         topBar = {
             Row(
@@ -182,20 +179,19 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
         },
         floatingActionButton = {
             if (selectedTab == 0) {
-                FloatingActionButton(
+                SmallFloatingActionButton(
                     onClick = { viewModel.toggleScan() },
                     containerColor = if (uiState.isRunning) MehrpolError else MehrpolCyan,
                     contentColor = Color.White
                 ) {
-                    Text(
-                        text = if (uiState.isRunning) "STOP SCAN" else "START SCAN",
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        fontWeight = FontWeight.Bold
+                    Icon(
+                        imageVector = if (uiState.isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        contentDescription = if (uiState.isRunning) "Stop scan" else "Start scan"
                     )
                 }
             }
         },
-        floatingActionButtonPosition = FabPosition.Center
+        floatingActionButtonPosition = FabPosition.End
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
             when (selectedTab) {
@@ -203,7 +199,9 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
                 1 -> HistoryScreen(uiState.history)
                 2 -> SniCheckScreen(
                     state = uiState.sniCheck,
-                    onRunCheck = viewModel::runSniCheck
+                    config = uiState.config,
+                    onRunCheck = viewModel::runSniCheck,
+                    onConfigChanged = viewModel::updateConfig
                 )
                 else -> SettingsScreen(uiState.config) { newConfig ->
                     viewModel.updateConfig(newConfig)
@@ -212,7 +210,6 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
         }
     }
 }
-
 @Composable
 fun HomeScreen(uiState: ScanUiState, context: Context) {
     val healthyResults = remember(uiState.results) { healthyExportResults(uiState.results) }
@@ -235,7 +232,6 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
         }
         pendingDownload = null
     }
-
     if (showExportDialog) {
         ExportDialog(
             results = healthyResults,
@@ -253,7 +249,6 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
             }
         )
     }
-
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StatCard("Tested", uiState.tested.toString(), Modifier.weight(1f))
@@ -264,11 +259,9 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
             StatCard("Healthy", uiState.healthy.toString(), Modifier.weight(1f), MehrpolSuccess)
             StatCard("Failed", uiState.failed.toString(), Modifier.weight(1f), MehrpolError)
         }
-
         Spacer(modifier = Modifier.height(8.dp))
         LatencySparkline(samples = uiState.latencySamples, isRunning = uiState.isRunning)
         Spacer(modifier = Modifier.height(8.dp))
-
         if (uiState.hasCompletedScan || healthyResults.isNotEmpty()) {
             HealthyExportControls(
                 selectedCount = selectedCount,
@@ -279,10 +272,8 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
             )
             Spacer(modifier = Modifier.height(8.dp))
         }
-
         Text("Discovered IPs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(8.dp))
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -305,7 +296,6 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Phase 1", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MehrpolCyan)
             }
-
             if (uiState.results.any { it.isPhase2 }) {
                 OutlinedButton(
                     onClick = {
@@ -327,9 +317,7 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                 }
             }
         }
-
         Spacer(modifier = Modifier.height(8.dp))
-
         if (uiState.isPhase2) {
             val progress = if (uiState.totalPhase2 > 0) uiState.tested.toFloat() / uiState.totalPhase2 else 0f
             Column(modifier = Modifier.padding(bottom = 8.dp)) {
@@ -365,10 +353,9 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
                 )
             }
         }
-
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 80.dp)
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(bottom = 96.dp)
         ) {
             items(uiState.results) { res ->
                 IpResultCard(result = res, onCopyIp = {
@@ -379,7 +366,6 @@ fun HomeScreen(uiState: ScanUiState, context: Context) {
         }
     }
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HealthyExportControls(
@@ -414,7 +400,6 @@ private fun HealthyExportControls(
         }
     }
 }
-
 @Composable
 private fun LatencySparkline(samples: List<Int>, isRunning: Boolean) {
     Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
@@ -452,7 +437,6 @@ private fun LatencySparkline(samples: List<Int>, isRunning: Boolean) {
         }
     }
 }
-
 @Composable
 private fun IpResultCard(result: IpResult, onCopyIp: () -> Unit) {
     Card(
@@ -514,7 +498,6 @@ private fun IpResultCard(result: IpResult, onCopyIp: () -> Unit) {
         }
     }
 }
-
 @Composable
 fun HistoryScreen(history: List<ScanHistoryEntry>) {
     LazyColumn(
@@ -550,14 +533,12 @@ fun HistoryScreen(history: List<ScanHistoryEntry>) {
         }
     }
 }
-
 enum class ExportFormat(val label: String, val extension: String) {
     V2RAY("V2Ray links", "txt"),
     XRAY("Xray JSON", "json"),
     CLASH("Clash YAML", "yaml"),
     CSV("CSV", "csv")
 }
-
 enum class ExportCountOption(val label: String, val limit: Int?) {
     ONE("1", 1),
     THREE("3", 3),
@@ -565,13 +546,11 @@ enum class ExportCountOption(val label: String, val limit: Int?) {
     TEN("10", 10),
     ALL("All", null)
 }
-
 data class GeneratedExport(
     val format: ExportFormat,
     val fileName: String,
     val content: String
 )
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ExportDialog(
@@ -630,12 +609,10 @@ private fun ExportDialog(
         containerColor = MehrpolDarkSurface
     )
 }
-
 private fun copyText(context: Context, label: String, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
 }
-
 private fun healthyExportResults(results: List<IpResult>): List<IpResult> {
     val phase2 = results.filter { it.isPhase2 }
     val healthy = if (phase2.isNotEmpty()) {
@@ -645,11 +622,9 @@ private fun healthyExportResults(results: List<IpResult>): List<IpResult> {
     }
     return healthy.distinctBy { "${it.ip}:${it.port}" }.sortedBy { if (it.latencyMs > 0) it.latencyMs else Int.MAX_VALUE }
 }
-
 private fun selectExportResults(results: List<IpResult>, count: ExportCountOption): List<IpResult> {
     return count.limit?.let { results.take(it) } ?: results
 }
-
 private fun buildExport(format: ExportFormat, results: List<IpResult>, config: ScanConfig): GeneratedExport {
     val content = when (format) {
         ExportFormat.V2RAY -> buildV2RayLinks(results, config)
@@ -659,7 +634,6 @@ private fun buildExport(format: ExportFormat, results: List<IpResult>, config: S
     }
     return GeneratedExport(format, "mehrpol-healthy-ips.${format.extension}", content)
 }
-
 private fun buildV2RayLinks(results: List<IpResult>, config: ScanConfig): String {
     return results.mapIndexed { index, result ->
         val template = config.configUrl.trim()
@@ -670,7 +644,6 @@ private fun buildV2RayLinks(results: List<IpResult>, config: ScanConfig): String
         }
     }.joinToString("\n")
 }
-
 private fun buildXrayJson(results: List<IpResult>, config: ScanConfig): String {
     if (results.isEmpty()) {
         return """{
@@ -709,7 +682,6 @@ $vnext
   ]
 }"""
 }
-
 private fun buildClashYaml(results: List<IpResult>, config: ScanConfig): String {
     if (results.isEmpty()) return "proxies: []\nproxy-groups: []\nrules: []\n"
     val proxies = results.mapIndexed { index, result ->
@@ -736,7 +708,6 @@ rules:
   - MATCH,mehrpol-auto
 """
 }
-
 private fun buildCsv(results: List<IpResult>): String {
     val rows = results.joinToString("\n") { result ->
         listOf(result.ip, result.port.toString(), result.latencyMs.toString(), String.format(Locale.US, "%.2f", result.loss), result.colo)
@@ -744,7 +715,6 @@ private fun buildCsv(results: List<IpResult>): String {
     }
     return "ip,port,latency_ms,loss_percent,colo\n$rows"
 }
-
 private fun replaceProxyEndpoint(template: String, ip: String, port: Int, fragment: String): String {
     val schemeEnd = template.indexOf("://")
     if (schemeEnd < 0) return template
@@ -759,14 +729,12 @@ private fun replaceProxyEndpoint(template: String, ip: String, port: Int, fragme
     val withoutFragment = template.substring(0, authorityStart) + userInfo + ip + ":$port" + template.substring(authorityEnd).substringBefore('#')
     return "$withoutFragment#$fragment"
 }
-
 private fun jsonEscape(value: String): String {
     return value
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
         .replace("\n", "\\n")
 }
-
 private fun csvEscape(value: String): String {
     return if (value.any { it == ',' || it == '"' || it == '\n' }) {
         "\"${value.replace("\"", "\"\"")}\""
@@ -774,13 +742,17 @@ private fun csvEscape(value: String): String {
         value
     }
 }
-
 @Composable
-fun SniCheckScreen(state: SniCheckUiState, onRunCheck: (String, String, String) -> Unit) {
+fun SniCheckScreen(
+    state: SniCheckUiState,
+    config: ScanConfig,
+    onRunCheck: (String, String, String) -> Unit,
+    onConfigChanged: (ScanConfig) -> Unit
+) {
     var host by remember { mutableStateOf("") }
     var sni by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("443") }
-
+    val context = LocalContext.current
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -838,35 +810,139 @@ fun SniCheckScreen(state: SniCheckUiState, onRunCheck: (String, String, String) 
                 Text(err, color = MehrpolError, fontWeight = FontWeight.Medium)
             }
         }
-        state.result?.let { result ->
+        if (state.isRangeScan && (state.isRunning || state.scanResults.isNotEmpty())) {
             item {
-                Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (result.isValid) Icons.Default.Check else Icons.Default.Close,
-                                contentDescription = if (result.isValid) "Valid" else "Blocked",
-                                tint = if (result.isValid) MehrpolSuccess else MehrpolError
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (result.isValid) "Valid" else "Blocked",
-                                color = if (result.isValid) MehrpolSuccess else MehrpolError,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        InfoValueRow("Endpoint", "${result.host}:${result.port}")
-                        InfoValueRow("SNI", result.sni)
-                        InfoValueRow("Status", result.status)
-                        InfoValueRow("Latency", "${result.latencyMs} ms")
-                        Text(result.message, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                SniRangeScanSummary(state)
+            }
+            if (state.scanResults.isNotEmpty()) {
+                item {
+                    Button(
+                        onClick = {
+                            val best = state.scanResults.first()
+                            onConfigChanged(config.withSniEndpoint(context, best))
+                            copyText(context, "Best SNI IP", "${best.host}:${best.port}")
+                            Toast.makeText(context, "Best IP applied and copied: ${best.host}:${best.port}", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MehrpolPrimary, contentColor = Color.White),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Use in Config", fontWeight = FontWeight.Bold)
                     }
                 }
+                items(state.scanResults) { result ->
+                    SniScanResultRow(
+                        result = result,
+                        onCopy = {
+                            copyText(context, "SNI IP", "${result.host}:${result.port}")
+                            Toast.makeText(context, "Copied ${result.host}:${result.port}", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+            }
+        }
+        state.result?.let { result ->
+            item {
+                SniSingleResultCard(result)
             }
         }
     }
 }
+@Composable
+private fun SniRangeScanSummary(state: SniCheckUiState) {
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Cloudflare scan", fontWeight = FontWeight.Bold, color = MehrpolCyan)
+                Text("${state.scanResults.size} valid", color = MehrpolSuccess, fontWeight = FontWeight.Bold)
+            }
+            if (state.totalCount > 0) {
+                LinearProgressIndicator(
+                    progress = { state.scannedCount.toFloat() / state.totalCount.toFloat() },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = MehrpolCyan,
+                    trackColor = Color.Gray.copy(alpha = 0.25f)
+                )
+                Text(
+                    text = if (state.isRunning) "${state.scannedCount} / ${state.totalCount} IPs tested" else "Top ${state.scanResults.size} IPs sorted by latency",
+                    color = Color.Gray,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+@Composable
+private fun SniSingleResultCard(result: SniCheckResult) {
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (result.isValid) Icons.Default.Check else Icons.Default.Close,
+                    contentDescription = if (result.isValid) "Valid" else "Invalid",
+                    tint = if (result.isValid) MehrpolSuccess else MehrpolError
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (result.isValid) "Valid" else "Invalid",
+                    color = if (result.isValid) MehrpolSuccess else MehrpolError,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            InfoValueRow("Endpoint", "${result.host}:${result.port}")
+            InfoValueRow("SNI", result.sni)
+            InfoValueRow("Status", result.status)
+            InfoValueRow("Latency", "${result.latencyMs} ms")
+            Text(result.message, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+@Composable
+private fun SniScanResultRow(result: SniCheckResult, onCopy: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface), modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("${result.host}:${result.port}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(result.status, color = Color.Gray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("${result.latencyMs} ms", color = MehrpolSuccess, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy IP", tint = MehrpolCyan, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+private fun ScanConfig.withSniEndpoint(context: Context, result: SniCheckResult): ScanConfig {
+    val selectedIpFile = File(context.cacheDir, "sni-best-ip.txt").apply {
+        writeText(result.host)
+    }
+    val template = configUrl.trim()
+    return if (template.contains("://")) {
+        copy(
+            sourceType = "From File",
+            sourceFile = selectedIpFile.absolutePath,
+            configUrl = replaceProxyEndpoint(template, result.host, result.port, "mehrpol-sni-${result.host}")
+        )
+    } else {
+        copy(
+            sourceType = "From File",
+            sourceFile = selectedIpFile.absolutePath,
+            portType = "CustomPorts",
+            selectedPorts = setOf(result.port),
+            configUrl = ""
+        )
+    }
+}
+
 
 @Composable
 fun StatCard(title: String, value: String, modifier: Modifier = Modifier, valueColor: Color = Color.White) {
@@ -880,11 +956,9 @@ fun StatCard(title: String, value: String, modifier: Modifier = Modifier, valueC
         }
     }
 }
-
 @Composable
 fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
     val context = LocalContext.current
-
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -903,13 +977,11 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
             }
         }
     }
-
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         item {
             Text("mehrpol Settings", style = MaterialTheme.typography.headlineSmall, color = MehrpolCyan, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
         }
-
         // 1. Source
         item {
             SettingSection("Source", "") {
@@ -928,7 +1000,6 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
                 }
             }
         }
-
         // 2. Count
         item {
             SettingDropdown(
@@ -942,7 +1013,6 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
                 isNumericCustom = true
             )
         }
-
         // 3. Workers
         item {
             SettingDropdown(
@@ -956,7 +1026,6 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
                 isNumericCustom = true
             )
         }
-
         // 4. Timeout
         item {
             SettingDropdown(
@@ -970,7 +1039,6 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
                 isNumericCustom = false // e.g., "10s"
             )
         }
-
         // 5. Ports
         item {
             SettingSection("Ports", "selecting multiple ports multiplies work") {
@@ -1015,7 +1083,6 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
                 }
             }
         }
-
         // 6. Top N
         item {
             SettingDropdown(
@@ -1029,13 +1096,11 @@ fun SettingsScreen(config: ScanConfig, onConfigChanged: (ScanConfig) -> Unit) {
                 isNumericCustom = true
             )
         }
-
         item {
             Spacer(modifier = Modifier.height(80.dp))
         }
     }
 }
-
 @Composable
 fun SettingSection(label: String, description: String, content: @Composable () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
@@ -1048,7 +1113,6 @@ fun SettingSection(label: String, description: String, content: @Composable () -
         content()
     }
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingDropdown(
@@ -1062,7 +1126,6 @@ fun SettingDropdown(
     isNumericCustom: Boolean
 ) {
     var expanded by remember { mutableStateOf(false) }
-
     SettingSection(label, description) {
         ExposedDropdownMenuBox(
             expanded = expanded,
@@ -1103,11 +1166,9 @@ fun SettingDropdown(
         }
     }
 }
-
 @Composable
 fun InfoDialog(onDismiss: () -> Unit) {
     val uriHandler = LocalUriHandler.current
-
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(20.dp),
@@ -1135,7 +1196,6 @@ fun InfoDialog(onDismiss: () -> Unit) {
                         Text("X", color = Color.Gray, fontWeight = FontWeight.Bold)
                     }
                 }
-
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MehrpolDarkSurface)
@@ -1184,7 +1244,6 @@ fun InfoDialog(onDismiss: () -> Unit) {
                         }
                     }
                 }
-
                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A2A))) {
                     Column(
                         modifier = Modifier.padding(14.dp),
@@ -1198,7 +1257,6 @@ fun InfoDialog(onDismiss: () -> Unit) {
                         )
                     }
                 }
-
                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A2A))) {
                     Column(
                         modifier = Modifier.padding(14.dp),
@@ -1219,7 +1277,6 @@ fun InfoDialog(onDismiss: () -> Unit) {
                         )
                     }
                 }
-
                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A2A))) {
                     Column(
                         modifier = Modifier.padding(14.dp),
@@ -1233,7 +1290,6 @@ fun InfoDialog(onDismiss: () -> Unit) {
         }
     }
 }
-
 @Composable
 private fun InfoLinkRow(title: String, link: String, onOpen: () -> Unit) {
     Row(
@@ -1263,7 +1319,6 @@ private fun InfoLinkRow(title: String, link: String, onOpen: () -> Unit) {
         )
     }
 }
-
 @Composable
 private fun InfoValueRow(label: String, value: String) {
     Column(
