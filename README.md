@@ -25,11 +25,16 @@ mehrpolscanner is available as a desktop terminal UI, Android app, and Termux-fr
 
 | Category | Capability |
 |---|---|
+| 🏠 Home tab | Auto-loads Cloudflare ranges, supports Region filtering, and sorts scan results by latency, jitter, or speed |
 | 🔍 Scanning | Automatic Cloudflare IPv4 range scanning from embedded official ranges, random source, custom `ips.txt` source, port selection, timeout control, result sorting, and IP count selector for config generation |
 | ⚡ Parallel scanning | Concurrent workers with presets for restricted, balanced, and fast networks |
-| 🌐 SNI check | Dedicated TLS SNI check for host/IP, SNI value, and port; when only SNI + port are entered, it automatically scans Cloudflare IPs and returns the best latency-sorted results |
+| 🌐 SNI check | Dedicated TLS SNI check for host/IP, SNI value, and port; when only SNI + port are entered, it automatically scans Cloudflare IPs and returns the best latency-sorted results. The SNI Spoof Check section accepts multiple SNI values and reports each one as open or blocked |
 | 🤖 Auto-SNI | Optional SNI rotation and auto-detection using `MEHRPOLSCANNER_SNIS` and `MEHRPOLSCANNER_AUTO_SNI` |
 | 🔐 TLS cert info | TLS handshake status plus certificate CN, issuer, expiry, and DNS names when available |
+| 🩺 Diagnostics tab | Automatically tests DNS, IPv4, IPv6, TCP routing, and HTTP/HTTPS connectivity so Iranian users can identify network problems |
+| 🌐 Domains tab | Checks `google.com`, `github.com`, `youtube.com`, `twitter.com`, `instagram.com`, `telegram.org`, and custom domains, marking accessible domains green and blocked domains red |
+| 🧭 DNS tab | Measures DNS latency for Google `8.8.8.8`, Cloudflare `1.1.1.1`, Shecan, 403online, Begzar, Electro, and `radar.game`, sorted by fastest resolver |
+| 🕵️ DNS Hunter tab | Detects DNS poisoning by Iranian datacenters and shows the resolved IP returned by each datacenter |
 | 🧪 Proxy validation | End-to-end proxy validation with embedded Xray for VLESS, Trojan, VMess, and Shadowsocks links where supported |
 | 🧩 Config generators | Builds Fragment and Warp configs alongside standard V2Ray/Xray-style exports so tested endpoints can be imported quickly |
 | 📈 Real-time charts | Live Phase 2 speed sparkline and real-time latency sparkline chart with throughput, jitter, custom speed URL, sample size, minimum-speed filter, and optional upload test |
@@ -40,7 +45,7 @@ mehrpolscanner is available as a desktop terminal UI, Android app, and Termux-fr
 | 🧠 Neighbor scan | Automatically scans nearby IPs around healthy random Cloudflare hits |
 | 🕓 History tab | Shows previous scans with date, IP, and healthy count, and compares new, removed, and unchanged endpoints |
 | ⭐ Favorites tab | Saves preferred IPs, compares them with a chart, and can auto-replace weak favorites with better scan results |
-| 📡 Monitor tab | Runs background ping checks, sends push notifications, includes a ping flood test, and exposes a home screen widget on Android |
+| 📡 Monitor tab | Runs background ping tests, sends push notifications, includes ping flood stability testing, and exposes a home screen widget on Android |
 | 📣 Telegram bot | Sends scan summaries to Telegram when bot credentials are configured |
 | ⏱️ Scheduled scan | Runs the saved scan repeatedly with `MEHRPOLSCANNER_AUTOSCAN_EVERY` |
 | 📦 Export dialog | Exports V2Ray links, Xray JSON, Clash YAML, Fragment config, Warp config, CSV, QR codes, and working endpoint lists with copy and download actions |
@@ -139,7 +144,9 @@ Typical workflow:
 8. Press `e` to export share links, QR codes, Fragment/Warp configs, `mehrpolscanner-sub.txt`, `mehrpolscanner-singbox.json`, and `mehrpolscanner-clash.yaml`.
 9. Press `h` to view scan history after a completed config scan.
 10. Use **Favorites** to save strong IPs, compare them over time, and auto-replace weak entries.
-11. Use **Monitor** for background ping checks, push alerts, ping flood testing, and the Android home screen widget.
+11. Use **Diagnostics**, **Domains**, **DNS**, and **DNS Hunter** to diagnose DNS, routing, HTTP/HTTPS, domain blocking, resolver latency, and DNS poisoning from Iranian networks.
+12. Use **SNI Check** and **SNI Spoof Check** to test one or more SNI values and see open/blocked results.
+13. Use **Monitor** for background ping tests, push alerts, ping flood stability testing, and the Android home screen widget.
 
 TUI keys:
 
@@ -212,11 +219,16 @@ mehrpolscanner به شکل رابط ترمینالی، اپ اندروید و ب
 
 | بخش | قابلیت |
 |---|---|
+| 🏠 تب Home | بارگذاری خودکار rangeهای Cloudflare، فیلتر Region و مرتب‌سازی نتایج بر اساس latency، jitter یا speed |
 | 🔍 اسکن | اسکن خودکار rangeهای رسمی IPv4 Cloudflare، منبع تصادفی، ورودی `ips.txt`، انتخاب پورت، timeout، مرتب‌سازی نتایج و انتخاب تعداد IP برای ساخت config |
 | ⚡ اسکن موازی | workerهای همزمان با preset مناسب شبکه محدود، متعادل و سریع |
-| 🌐 بررسی SNI | تست TLS SNI برای host/IP، مقدار SNI و پورت؛ اگر فقط SNI و پورت وارد شود، IPهای Cloudflare را خودکار اسکن می‌کند و بهترین نتایج را بر اساس latency برمی‌گرداند |
+| 🌐 بررسی SNI | تست TLS SNI برای host/IP، مقدار SNI و پورت؛ اگر فقط SNI و پورت وارد شود، IPهای Cloudflare را خودکار اسکن می‌کند و بهترین نتایج را بر اساس latency برمی‌گرداند. بخش SNI Spoof Check چند SNI را همزمان می‌گیرد و نتیجه open یا blocked را نشان می‌دهد |
 | 🤖 Auto-SNI | چرخش SNI و تشخیص خودکار با `MEHRPOLSCANNER_SNIS` و `MEHRPOLSCANNER_AUTO_SNI` |
 | 🔐 اطلاعات TLS cert | وضعیت TLS handshake، CN، issuer، expiry و DNS nameهای گواهی در صورت وجود |
+| 🩺 تب Diagnostics | تست خودکار DNS، IPv4، IPv6، TCP routing و اتصال HTTP/HTTPS برای کمک به کاربران ایران در پیدا کردن مشکل شبکه |
+| 🌐 تب Domains | بررسی دسترسی به `google.com`، `github.com`، `youtube.com`، `twitter.com`، `instagram.com`، `telegram.org` و دامنه‌های سفارشی؛ سبز یعنی قابل دسترس و قرمز یعنی blocked |
+| 🧭 تب DNS | تست latency برای DNSهای Google `8.8.8.8`، Cloudflare `1.1.1.1`، Shecan، 403online، Begzar، Electro و `radar.game`، مرتب‌شده از سریع‌ترین |
+| 🕵️ تب DNS Hunter | تشخیص DNS poisoning توسط دیتاسنترهای ایران و نمایش IP resolve شده برای هر دیتاسنتر |
 | 🧪 تست پروکسی | اعتبارسنجی end-to-end با Xray داخلی برای VLESS، Trojan، VMess و Shadowsocks در مسیرهای پشتیبانی‌شده |
 | 🧩 ساخت کانفیگ | ساخت Fragment config و Warp config کنار خروجی‌های استاندارد V2Ray/Xray برای import سریع endpointهای تست‌شده |
 | 📈 نمودارهای زنده | sparkline سرعت فاز ۲ و نمودار sparkline لحظه‌ای latency همراه با throughput، jitter، speed URL سفارشی، حجم نمونه، min-speed و تست آپلود |
@@ -227,7 +239,7 @@ mehrpolscanner به شکل رابط ترمینالی، اپ اندروید و ب
 | 🧠 Neighbor scan | اسکن خودکار IPهای نزدیک به hitهای سالم در rangeهای Cloudflare |
 | 🕓 تب History | نمایش اسکن‌های قبلی با تاریخ، IP و تعداد سالم‌ها، همراه با مقایسه endpointهای جدید، حذف‌شده و ثابت |
 | ⭐ تب Favorites | ذخیره IPهای منتخب، مقایسه آن‌ها با نمودار و جایگزینی خودکار favoriteهای ضعیف با نتایج بهتر |
-| 📡 تب Monitor | ping پس‌زمینه، push notification، تست ping flood و widget صفحه اصلی در اندروید |
+| 📡 تب Monitor | تست ping پس‌زمینه، push notification، تست پایداری ping flood و widget صفحه اصلی در اندروید |
 | 📣 ربات تلگرام | ارسال خلاصه اسکن به تلگرام در صورت تنظیم اطلاعات ربات |
 | ⏱️ اسکن زمان‌بندی‌شده | اجرای تکراری آخرین اسکن با `MEHRPOLSCANNER_AUTOSCAN_EVERY` |
 | 📦 دیالوگ خروجی | export لینک‌های V2Ray، JSON برای Xray، YAML برای Clash، Fragment config، Warp config، CSV، QR code و لیست endpointها با copy و download |
@@ -326,7 +338,9 @@ mehrpolscanner version
 8. با `e` لینک‌های share، QR code، Fragment/Warp config و خروجی‌های `mehrpolscanner-sub.txt`، `mehrpolscanner-singbox.json` و `mehrpolscanner-clash.yaml` را بسازید.
 9. بعد از پایان اسکن config، با `h` history را ببینید.
 10. از **Favorites** برای ذخیره IPهای قوی، مقایسه دوره‌ای و جایگزینی خودکار موارد ضعیف استفاده کنید.
-11. از **Monitor** برای ping پس‌زمینه، هشدار push، تست ping flood و widget صفحه اصلی اندروید استفاده کنید.
+11. از **Diagnostics**، **Domains**، **DNS** و **DNS Hunter** برای عیب‌یابی DNS، routing، HTTP/HTTPS، بلاک بودن دامنه‌ها، latency resolverها و DNS poisoning در شبکه‌های ایران استفاده کنید.
+12. از **SNI Check** و **SNI Spoof Check** برای تست یک یا چند SNI و دیدن نتیجه open/blocked استفاده کنید.
+13. از **Monitor** برای تست ping پس‌زمینه، هشدار push، تست پایداری ping flood و widget صفحه اصلی اندروید استفاده کنید.
 
 کلیدهای TUI:
 
