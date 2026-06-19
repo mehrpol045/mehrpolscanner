@@ -68,6 +68,10 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Install Android SDK Platform
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36"
+
       - name: Build Go Mobile
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
