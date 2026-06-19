@@ -58,9 +58,10 @@ jobs:
           distribution: 'temurin'
 
       # ??? ??? ???? SDK 36 ?? ???? ???? ??????? ?? ??????
-      - name: Install Android SDK Platform
+            - name: Install Android SDK Platform
         run: |
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36"
+
 
       - name: Build Go Mobile
         run: |
@@ -77,11 +78,12 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: mehrpol-debug
           path: android/app/build/outputs/apk/debug/app-*-debug.apk
           retention-days: 1
+
+    
 
