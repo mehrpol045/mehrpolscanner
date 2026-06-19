@@ -33,6 +33,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Notifications
@@ -84,6 +86,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.launch
 import com.mehrpol.BestIpWidgetProvider
 import com.mehrpol.BuildConfig
 import com.mehrpol.R
@@ -96,7 +99,9 @@ import com.mehrpol.theme.MehrpolSuccess
 @Composable
 fun AppUI(viewModel: MainViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedDestination by remember { mutableStateOf(DrawerDestination.Home) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
     var showInfoDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     LaunchedEffect(uiState.error) {
@@ -108,256 +113,227 @@ fun AppUI(viewModel: MainViewModel = viewModel()) {
     if (showInfoDialog) {
         InfoDialog(onDismiss = { showInfoDialog = false })
     }
-    Scaffold(
-        topBar = {
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            MehrpolDrawerContent(
+                selectedDestination = selectedDestination,
+                onDestinationSelected = { destination ->
+                    selectedDestination = destination
+                    scope.launch { drawerState.close() }
+                },
+                onInfoClick = {
+                    showInfoDialog = true
+                    scope.launch { drawerState.close() }
+                }
+            )
+        }
+    ) {
+        Scaffold(
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_launcher_foreground_raw),
+                                contentDescription = stringResource(R.string.info_app_logo),
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = selectedDestination.title,
+                                color = MehrpolCyan,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, contentDescription = "Open navigation drawer", tint = MehrpolCyan)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { showInfoDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.Info,
+                                contentDescription = stringResource(R.string.title_info),
+                                tint = MehrpolCyan
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MehrpolCyan
+                    )
+                )
+            },
+            floatingActionButton = {
+                if (selectedDestination == DrawerDestination.Home) {
+                    SmallFloatingActionButton(
+                        onClick = { viewModel.toggleScan() },
+                        containerColor = if (uiState.isRunning) MehrpolError else MehrpolCyan,
+                        contentColor = Color.White
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            contentDescription = if (uiState.isRunning) "Stop scan" else "Start scan"
+                        )
+                    }
+                }
+            },
+            floatingActionButtonPosition = FabPosition.End
+        ) { innerPadding ->
+            Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+                when (selectedDestination) {
+                    DrawerDestination.Home -> HomeScreen(
+                        uiState = uiState,
+                        context = context,
+                        onToggleFavorite = viewModel::toggleFavorite,
+                        onConfigChanged = viewModel::updateConfig
+                    )
+                    DrawerDestination.History -> HistoryScreen(uiState.history)
+                    DrawerDestination.Sni -> SniCheckScreen(
+                        state = uiState.sniCheck,
+                        spoofState = uiState.sniSpoof,
+                        config = uiState.config,
+                        onRunCheck = viewModel::runSniCheck,
+                        onRunSpoofCheck = viewModel::runSniSpoofCheck,
+                        onConfigChanged = viewModel::updateConfig
+                    )
+                    DrawerDestination.Favorites -> FavoritesScreen(
+                        favorites = uiState.favorites,
+                        autoReplacedConfig = uiState.autoReplacedConfig,
+                        onRemoveFavorite = viewModel::removeFavorite,
+                        context = context
+                    )
+                    DrawerDestination.Monitor -> MonitorScreen(
+                        state = uiState.monitor,
+                        favorites = uiState.favorites,
+                        onToggleSchedule = viewModel::startOrStopMonitor,
+                        onRunFlood = viewModel::runPingFlood,
+                        onIntervalChanged = viewModel::updateMonitorInterval,
+                        onClearNotification = viewModel::clearMonitorNotification,
+                        context = context
+                    )
+                    DrawerDestination.Diagnostics -> DiagnosticsScreen(
+                        state = uiState.diagnostics,
+                        onStart = viewModel::runDiagnostics
+                    )
+                    DrawerDestination.Domains -> DomainsScreen(
+                        state = uiState.domains,
+                        onAddDomain = viewModel::addCustomDomain,
+                        onCheckAll = viewModel::checkAllDomains,
+                        onCheckDomain = viewModel::checkDomain
+                    )
+                    DrawerDestination.Dns -> DnsScreen(
+                        state = uiState.dns,
+                        onTestAll = viewModel::testAllDnsProviders
+                    )
+                    DrawerDestination.DnsHunter -> DnsHunterScreen(
+                        state = uiState.dnsHunter,
+                        onRun = viewModel::runDnsHunter
+                    )
+                    DrawerDestination.Settings -> SettingsScreen(
+                        config = uiState.config,
+                        onConfigChanged = viewModel::updateConfig,
+                        onGeneratedConfig = viewModel::updateGeneratedConfig
+                    )
+                }
+            }
+        }
+    }
+
+}
+
+private enum class DrawerCategory(val title: String) {
+    Scanner("Scanner"),
+    Tools("Network Tools"),
+    Library("Library"),
+    App("App")
+}
+
+private enum class DrawerDestination(
+    val title: String,
+    val category: DrawerCategory,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    Home("Home", DrawerCategory.Scanner, Icons.Default.Home),
+    History("History", DrawerCategory.Library, Icons.Default.History),
+    Favorites("Favorites", DrawerCategory.Library, Icons.Default.Star),
+    Sni("SNI Check", DrawerCategory.Tools, Icons.Default.Security),
+    Monitor("Monitor", DrawerCategory.Scanner, Icons.Default.AutoGraph),
+    Diagnostics("Diagnostics", DrawerCategory.Tools, Icons.Default.Radar),
+    Domains("Domains", DrawerCategory.Tools, Icons.Default.Language),
+    Dns("DNS", DrawerCategory.Tools, Icons.Default.Dns),
+    DnsHunter("DNS Hunter", DrawerCategory.Tools, Icons.Default.Search),
+    Settings("Settings", DrawerCategory.App, Icons.Default.Settings)
+}
+
+@Composable
+private fun MehrpolDrawerContent(
+    selectedDestination: DrawerDestination,
+    onDestinationSelected: (DrawerDestination) -> Unit,
+    onInfoClick: () -> Unit
+) {
+    ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surface) {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 16.dp)
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onInfoClick)
+                    .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { showInfoDialog = true }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_foreground_raw),
-                        contentDescription = stringResource(R.string.info_app_logo),
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.app_name),
-                        color = MehrpolCyan,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
-                    )
-                }
-                IconButton(onClick = { showInfoDialog = true }) {
-                    Icon(
-                        imageVector = Icons.Filled.Info,
-                        contentDescription = stringResource(R.string.title_info),
-                        tint = MehrpolCyan
-                    )
+                Image(
+                    painter = painterResource(id = R.drawable.ic_launcher_foreground_raw),
+                    contentDescription = stringResource(R.string.info_app_logo),
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(stringResource(R.string.app_name), color = MehrpolCyan, fontWeight = FontWeight.Bold)
+                    Text("Scanner and network tools", color = Color.Gray, fontSize = 12.sp)
                 }
             }
-        },
-        bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                    label = { Text("Home") },
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
+            Spacer(modifier = Modifier.height(8.dp))
+            DrawerCategory.entries.forEach { category ->
+                Text(
+                    text = category.title,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = Color.Gray,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
                 )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.History, contentDescription = "History") },
-                    label = { Text("History") },
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Security, contentDescription = "SNI Check") },
-                    label = { Text("SNI") },
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
-                    label = { Text("Favorites") },
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.AutoGraph, contentDescription = "Monitor") },
-                    label = { Text("Monitor") },
-                    selected = selectedTab == 4,
-                    onClick = { selectedTab = 4 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Radar, contentDescription = "Diagnostics") },
-                    label = { Text("Diagnostics", fontSize = 10.sp, maxLines = 1) },
-                    selected = selectedTab == 5,
-                    onClick = { selectedTab = 5 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Language, contentDescription = "Domains") },
-                    label = { Text("Domains", fontSize = 10.sp, maxLines = 1) },
-                    selected = selectedTab == 6,
-                    onClick = { selectedTab = 6 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Dns, contentDescription = "DNS") },
-                    label = { Text("DNS", fontSize = 10.sp, maxLines = 1) },
-                    selected = selectedTab == 7,
-                    onClick = { selectedTab = 7 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Search, contentDescription = "DNS Hunter") },
-                    label = { Text("Hunter", fontSize = 10.sp, maxLines = 1) },
-                    selected = selectedTab == 8,
-                    onClick = { selectedTab = 8 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings", fontSize = 10.sp, maxLines = 1) },
-                    selected = selectedTab == 9,
-                    onClick = { selectedTab = 9 },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.background,
-                        selectedTextColor = MehrpolCyan,
-                        indicatorColor = MehrpolCyan,
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    )
-                )
-            }
-        },
-        floatingActionButton = {
-            if (selectedTab == 0) {
-                SmallFloatingActionButton(
-                    onClick = { viewModel.toggleScan() },
-                    containerColor = if (uiState.isRunning) MehrpolError else MehrpolCyan,
-                    contentColor = Color.White
-                ) {
-                    Icon(
-                        imageVector = if (uiState.isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = if (uiState.isRunning) "Stop scan" else "Start scan"
+                DrawerDestination.entries.filter { it.category == category }.forEach { destination ->
+                    NavigationDrawerItem(
+                        label = { Text(destination.title) },
+                        selected = selectedDestination == destination,
+                        onClick = { onDestinationSelected(destination) },
+                        icon = { Icon(destination.icon, contentDescription = null) },
+                        colors = NavigationDrawerItemDefaults.colors(
+                            selectedContainerColor = MehrpolCyan.copy(alpha = 0.18f),
+                            selectedIconColor = MehrpolCyan,
+                            selectedTextColor = MehrpolCyan,
+                            unselectedIconColor = Color.Gray,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                     )
                 }
-            }
-        },
-        floatingActionButtonPosition = FabPosition.End
-    ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
-            when (selectedTab) {
-                0 -> HomeScreen(
-                    uiState = uiState,
-                    context = context,
-                    onToggleFavorite = viewModel::toggleFavorite
-                )
-                1 -> HistoryScreen(uiState.history)
-                2 -> SniCheckScreen(
-                    state = uiState.sniCheck,
-                    spoofState = uiState.sniSpoof,
-                    config = uiState.config,
-                    onRunCheck = viewModel::runSniCheck,
-                    onRunSpoofCheck = viewModel::runSniSpoofCheck,
-                    onConfigChanged = viewModel::updateConfig
-                )
-                3 -> FavoritesScreen(
-                    favorites = uiState.favorites,
-                    autoReplacedConfig = uiState.autoReplacedConfig,
-                    onRemoveFavorite = viewModel::removeFavorite,
-                    context = context
-                )
-                4 -> MonitorScreen(
-                    state = uiState.monitor,
-                    favorites = uiState.favorites,
-                    onToggleSchedule = viewModel::startOrStopMonitor,
-                    onRunFlood = viewModel::runPingFlood,
-                    onIntervalChanged = viewModel::updateMonitorInterval,
-                    onClearNotification = viewModel::clearMonitorNotification,
-                    context = context
-                )
-                5 -> DiagnosticsScreen(
-                    state = uiState.diagnostics,
-                    onStart = viewModel::runDiagnostics
-                )
-                6 -> DomainsScreen(
-                    state = uiState.domains,
-                    onAddDomain = viewModel::addCustomDomain,
-                    onCheckAll = viewModel::checkAllDomains,
-                    onCheckDomain = viewModel::checkDomain
-                )
-                7 -> DnsScreen(
-                    state = uiState.dns,
-                    onTestAll = viewModel::testAllDnsProviders
-                )
-                8 -> DnsHunterScreen(
-                    state = uiState.dnsHunter,
-                    onRun = viewModel::runDnsHunter
-                )
-                else -> SettingsScreen(
-                    config = uiState.config,
-                    onConfigChanged = viewModel::updateConfig,
-                    onGeneratedConfig = viewModel::updateGeneratedConfig
-                )
             }
         }
     }
 }
 @Composable
-fun HomeScreen(uiState: ScanUiState, context: Context, onToggleFavorite: (IpResult) -> Unit) {
+fun HomeScreen(uiState: ScanUiState, context: Context, onToggleFavorite: (IpResult) -> Unit, onConfigChanged: (ScanConfig) -> Unit) {
     val healthyResults = remember(uiState.results) { healthyExportResults(uiState.results) }
     var selectedRegion by remember { mutableStateOf("All") }
     var selectedSort by remember { mutableStateOf(ResultSortOption.LATENCY) }
@@ -365,6 +341,7 @@ fun HomeScreen(uiState: ScanUiState, context: Context, onToggleFavorite: (IpResu
         sortResults(filterResultsByRegion(uiState.results, selectedRegion), selectedSort)
     }
     var showExportDialog by remember { mutableStateOf(false) }
+    var showQuickSettings by remember { mutableStateOf(false) }
     var selectedCount by remember { mutableStateOf(ExportCountOption.THREE) }
     var pendingDownload by remember { mutableStateOf<GeneratedExport?>(null) }
     val documentLauncher = rememberLauncherForActivityResult(
@@ -400,7 +377,26 @@ fun HomeScreen(uiState: ScanUiState, context: Context, onToggleFavorite: (IpResu
             }
         )
     }
+    if (showQuickSettings) {
+        QuickScanSettingsDialog(
+            config = uiState.config,
+            onDismiss = { showQuickSettings = false },
+            onApply = { nextConfig ->
+                onConfigChanged(nextConfig)
+                showQuickSettings = false
+            }
+        )
+    }
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { showQuickSettings = true }) {
+                Icon(Icons.Default.Tune, contentDescription = "Quick scan settings", tint = MehrpolCyan)
+            }
+        }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StatCard("Tested", uiState.tested.toString(), Modifier.weight(1f))
             StatCard("In-Flight", uiState.inFlight.toString(), Modifier.weight(1f))
@@ -530,6 +526,100 @@ fun HomeScreen(uiState: ScanUiState, context: Context, onToggleFavorite: (IpResu
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QuickScanSettingsDialog(
+    config: ScanConfig,
+    onDismiss: () -> Unit,
+    onApply: (ScanConfig) -> Unit
+) {
+    var draft by remember(config) { mutableStateOf(config) }
+    val portOptions = listOf(443, 8443, 2053, 2083, 2087, 2096)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Quick Scan Settings") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                CompactDropdown(
+                    label = "Workers",
+                    value = draft.workerType,
+                    options = listOf("50- default (restricted net)", "100 - balanced", "200 - fast (good connections)", "Custom"),
+                    onSelected = { draft = draft.copy(workerType = it) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (draft.workerType == "Custom") {
+                    OutlinedTextField(
+                        value = draft.customWorkers,
+                        onValueChange = { draft = draft.copy(customWorkers = it.filter(Char::isDigit).take(4)) },
+                        label = { Text("Custom workers") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                CompactDropdown(
+                    label = "Timeout",
+                    value = draft.timeoutType,
+                    options = listOf("2s - aggressive (fast net)", "3s- balanced", "5s - default (restricted net)", "Custom"),
+                    onSelected = { draft = draft.copy(timeoutType = it) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (draft.timeoutType == "Custom") {
+                    OutlinedTextField(
+                        value = draft.customTimeout,
+                        onValueChange = { draft = draft.copy(customTimeout = it.filter { ch -> ch.isDigit() || ch == 's' || ch == 'S' }.take(5)) },
+                        label = { Text("Custom timeout") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Text("Ports", color = Color.Gray, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = draft.portType == "Config",
+                        onClick = { draft = draft.copy(portType = "Config") },
+                        colors = RadioButtonDefaults.colors(selectedColor = MehrpolCyan)
+                    )
+                    Text("Use config URL", modifier = Modifier.clickable { draft = draft.copy(portType = "Config") })
+                }
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    portOptions.forEach { port ->
+                        FilterChip(
+                            selected = draft.portType == "CustomPorts" && port in draft.selectedPorts,
+                            onClick = {
+                                val nextPorts = draft.selectedPorts.toMutableSet()
+                                if (port in nextPorts) nextPorts.remove(port) else nextPorts.add(port)
+                                draft = draft.copy(portType = "CustomPorts", selectedPorts = nextPorts, configUrl = "")
+                            },
+                            label = { Text(port.toString()) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MehrpolCyan,
+                                selectedLabelColor = MaterialTheme.colorScheme.background
+                            )
+                        )
+                    }
+                }
+                if (draft.portType == "Config") {
+                    OutlinedTextField(
+                        value = draft.configUrl,
+                        onValueChange = { draft = draft.copy(configUrl = it) },
+                        label = { Text("Config URL") },
+                        singleLine = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onApply(draft) }) { Text("Apply") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        containerColor = MehrpolDarkSurface
+    )
 }
 
 enum class ResultSortOption(val label: String) {

@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -264,64 +265,74 @@ class MainViewModel : ViewModel() {
 
     private val scanCallback = object : Callback {
         override fun onProgress(tested: Long, healthy: Long, failed: Long, inFlight: Long, isPhase2: Boolean) {
-            val current = _uiState.value
-            var total = current.totalPhase2
-            if (isPhase2 && total == 0 && tested.toInt() == 0) {
-                total = inFlight.toInt()
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                _uiState.update { current ->
+                    val total = if (isPhase2 && current.totalPhase2 == 0 && tested.toInt() == 0) {
+                        inFlight.toInt()
+                    } else {
+                        current.totalPhase2
+                    }
+                    current.copy(
+                        tested = tested.toInt(),
+                        healthy = healthy.toInt(),
+                        failed = failed.toInt(),
+                        inFlight = inFlight.toInt(),
+                        isPhase2 = isPhase2,
+                        totalPhase2 = total
+                    )
+                }
             }
-            _uiState.value = current.copy(
-                tested = tested.toInt(),
-                healthy = healthy.toInt(),
-                failed = failed.toInt(),
-                inFlight = inFlight.toInt(),
-                isPhase2 = isPhase2,
-                totalPhase2 = total
-            )
         }
 
         override fun onResult(ip: String, port: Long, latencyMs: Long, loss: Double, colo: String, isHealthy: Boolean, isPhase2: Boolean, phase2Type: String, phase2Speed: Double, phase2Status: Boolean) {
             val res = enrichResult(
                 IpResult(ip, port.toInt(), latencyMs.toInt(), loss, colo, isHealthy, isPhase2, phase2Type, phase2Speed, phase2Status)
             )
-            val current = _uiState.value
-            val newList = current.results.toMutableList()
-            newList.add(0, res)
-            val newSamples = if (res.latencyMs > 0) {
-                (current.latencySamples + res.latencyMs).takeLast(60)
-            } else {
-                current.latencySamples
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                _uiState.update { current ->
+                    val newSamples = if (res.latencyMs > 0) {
+                        (current.latencySamples + res.latencyMs).takeLast(60)
+                    } else {
+                        current.latencySamples
+                    }
+                    val updatedConfig = maybeReplaceSavedConfig(current, res)
+                    current.copy(
+                        results = listOf(res) + current.results,
+                        latencySamples = newSamples,
+                        autoReplacedConfig = updatedConfig ?: current.autoReplacedConfig
+                    )
+                }
             }
-            val updatedConfig = maybeReplaceSavedConfig(current, res)
-            _uiState.value = current.copy(
-                results = newList,
-                latencySamples = newSamples,
-                autoReplacedConfig = updatedConfig ?: current.autoReplacedConfig
-            )
         }
 
         override fun onFinished() {
-            val current = _uiState.value
-            val ipCount = current.results.map { it.ip }.distinct().size.takeIf { it > 0 } ?: current.tested
-            val healthyCount = countHealthyResults(current.results)
-            val newHistory = if (ipCount > 0 || current.tested > 0) {
-                val entry = ScanHistoryEntry(
-                    date = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date()),
-                    ipCount = ipCount,
-                    healthyCount = healthyCount
-                )
-                (listOf(entry) + current.history).take(50)
-            } else {
-                current.history
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                _uiState.update { current ->
+                    val ipCount = current.results.map { it.ip }.distinct().size.takeIf { it > 0 } ?: current.tested
+                    val healthyCount = countHealthyResults(current.results)
+                    val newHistory = if (ipCount > 0 || current.tested > 0) {
+                        val entry = ScanHistoryEntry(
+                            date = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date()),
+                            ipCount = ipCount,
+                            healthyCount = healthyCount
+                        )
+                        (listOf(entry) + current.history).take(50)
+                    } else {
+                        current.history
+                    }
+                    current.copy(
+                        isRunning = false,
+                        hasCompletedScan = ipCount > 0 || current.tested > 0,
+                        history = newHistory
+                    )
+                }
             }
-            _uiState.value = current.copy(
-                isRunning = false,
-                hasCompletedScan = ipCount > 0 || current.tested > 0,
-                history = newHistory
-            )
         }
 
         override fun onError(err: String) {
-            _uiState.value = _uiState.value.copy(isRunning = false, error = err)
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                _uiState.update { it.copy(isRunning = false, error = err) }
+            }
         }
     }
 
