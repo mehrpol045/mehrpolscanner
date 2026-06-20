@@ -1,8 +1,8 @@
 plugins {
   alias(libs.plugins.android.application)
+    alias(libs.plugins.ksp)
   alias(libs.plugins.compose.compiler)
-  alias(libs.plugins.kotlin.serialization)
-}
+  alias(libs.plugins.kotlin.serialization)}
 
 android {
     namespace = "com.mehrpol"
@@ -107,4 +107,10 @@ dependencies {
 
   implementation(libs.kotlinx.serialization.json)
   implementation(files("libs/mehrpol.aar"))
+
+
+    // Room Database
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
 }
