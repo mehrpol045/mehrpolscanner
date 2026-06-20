@@ -12,6 +12,6 @@
     <string name="info_app_version">App Version</string>
     <string name="info_open_link">Open link</string>
     <string name="info_description">A Cloudflare IP scanner built for high-latency, restricted networks.\nProbes Cloudflare\'s edge nodes via TCP/TLS/HTTP, measures loss, jitter, and identifies the colo (PoP) behind each IP.</string>
-    <string name="project_main_github">github.com/matinsenpai/mehrpol</string>
-    <string name="project_main_telegram">t.me/mehrpol</string>
+    <string name="project_main_github">github.com/mehrpol045/mehrpolscanner</string>
+    <string name="project_main_telegram">t.me/mehrpol1</string>
 </resources>
