@@ -56,13 +56,9 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-
-
-            - name: Install Android SDK Platform
+      - name: Install Android SDK Platform
         run: |
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36"
-
-
       - name: Build Go Mobile
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
@@ -72,7 +68,6 @@ jobs:
           gomobile init
           chmod +x ./android/build_go_mobile.sh
           ./android/build_go_mobile.sh
-
       - name: Build Android Debug APK
         working-directory: android
         run: |
@@ -84,6 +79,3 @@ jobs:
           name: mehrpol-debug
           path: android/app/build/outputs/apk/debug/app-*-debug.apk
           retention-days: 1
-
-    
-
