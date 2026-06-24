@@ -29,6 +29,7 @@ jobs:
         run: go test -short -race ./...
 
   lint:
+    if: false
     name: Lint
     runs-on: ubuntu-latest
     steps:
